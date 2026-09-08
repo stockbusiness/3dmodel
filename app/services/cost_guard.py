@@ -103,6 +103,29 @@ def _format(micro_usd: int) -> str:
     return f"${micro_usd // USD_MICRO}.{micro_usd % USD_MICRO // 10_000:02d}"
 
 
+def confirmed_total(db: Session, experiment_id: str) -> int:
+    """手動で確認した実績の合計。"""
+    return int(
+        db.scalar(
+            select(func.coalesce(func.sum(CostEntry.amount_micro_usd), 0))
+            .select_from(CostEntry)
+            .join(Generation, Generation.id == CostEntry.generation_id)
+            .where(
+                CostEntry.kind == "confirmed_manual",
+                Generation.experiment_id == experiment_id,
+            )
+        )
+        or 0
+    )
+
+
+def overrun(db: Session, experiment: Experiment) -> int:
+    """確定実費が見積合計をどれだけ超えているか（超えていなければ0）。"""
+    estimated = _committed(db, experiment_id=experiment.id, live_only=False)
+    confirmed = confirmed_total(db, experiment.id)
+    return max(0, confirmed - estimated)
+
+
 def require_headroom(db: Session, experiment: Experiment, additional_micro_usd: int) -> None:
     """新規依頼の上限見積を加えても上限額を超えないことを確かめる。
 
@@ -110,6 +133,15 @@ def require_headroom(db: Session, experiment: Experiment, additional_micro_usd: 
     """
     if experiment.is_live and experiment.cost_cap_micro_usd is None:
         raise CostCapExceeded("この検証セットに上限額が設定されていません")
+
+    # 確定実費が見積合計を超えていたら新規生成を止める（仕様第11章）
+    exceeded = overrun(db, experiment)
+    if exceeded > 0:
+        raise CostCapExceeded(
+            "手動確認した実費が見積の合計を超えています"
+            f"（超過 {_format(exceeded)}）。"
+            "見積の前提を見直すまで新規の生成を受け付けません"
+        )
 
     per_set = experiment_state(db, experiment)
     if per_set.cap_micro_usd is not None:

@@ -4,7 +4,17 @@
 <p class="footnote"><a href="/assets/{{ asset.id }}">← {{ asset.title or "題材" }}</a></p>
 <h1>生成結果
   {% if generation.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}
+  {% if public.blind %}<span class="badge warn">ブラインド（{{ public.label }}）</span>{% endif %}
 </h1>
+
+{% if comparison %}
+<p class="footnote"><a href="/comparisons/{{ comparison.id }}">← 2社を並べて見る</a></p>
+{% endif %}
+{% if public.blind %}
+<div class="notice warn">
+  この結果はブラインド評価の対象です。どのサービスの結果かは、評価が確定するまで表示しません。
+</div>
+{% endif %}
 
 <div class="panel" data-generation-id="{{ generation.id }}" data-in-progress="{{ 1 if in_progress else 0 }}">
   <p>
@@ -12,7 +22,7 @@
     <span class="footnote" data-status-note>{{ status_explanation }}</span>
   </p>
   <dl class="kv">
-    <dt>サービス</dt><dd>{{ generation.provider }}</dd>
+    <dt>サービス</dt><dd>{{ public.provider or "（評価確定まで非表示）" }}</dd>
     <dt>試行回数</dt><dd>{{ generation.attempt_index }}{% if generation.parent_id %}（再生成）{% endif %}</dd>
     <dt>受付日時</dt><dd>{{ generation.created_at | jst }}</dd>
     <dt>受付からの経過</dt><dd data-elapsed>{{ elapsed_label }}</dd>
@@ -92,15 +102,19 @@
   {% endif %}
 
   <div class="notice" data-action-result hidden></div>
+  {% if public.blind %}
+  <p class="footnote">プリセット・モデルID・外部タスクIDは、評価が確定してから表示します。</p>
+  {% else %}
   <details class="advanced">
     <summary>運営用の詳細（モデルID・プリセット）</summary>
     <dl class="kv">
-      <dt>プリセット</dt><dd>{{ snapshot.get("display_name", "—") }}（{{ snapshot.get("code", "—") }}）</dd>
-      <dt>モデルID</dt><dd class="mono">{{ snapshot.get("model_id") or "—" }}</dd>
+      <dt>プリセット</dt><dd>{{ public.preset_name or "—" }}（{{ public.preset_code or "—" }}）</dd>
+      <dt>モデルID</dt><dd class="mono">{{ public.model_id or "—" }}</dd>
       <dt>プリセット版</dt><dd>{{ snapshot.get("version", "—") }}</dd>
-      <dt>外部タスクID</dt><dd class="mono">{{ generation.provider_task_id or "—" }}</dd>
+      <dt>外部タスクID</dt><dd class="mono">{{ public.provider_task_id or "—" }}</dd>
     </dl>
   </details>
+  {% endif %}
 </div>
 
 <div class="grid two">
@@ -221,6 +235,26 @@
     <p><button type="submit">{{ "評価を改訂する" if latest_review else "評価を登録する" }}</button></p>
   </form>
   {% endif %}
+</div>
+
+<h2>実費を記録する</h2>
+<div class="panel">
+  <p class="footnote">
+    事業者の管理画面や請求履歴と照合した実費を入力します。見積とは別の行として保存し、混ぜません。
+    同じ明細を二重に計上しないよう、明細を識別する文字列が必要です。入力は監査ログに残ります。
+  </p>
+  <form data-cost="{{ generation.id }}">
+    <label for="cost_amount">金額（USD）<span class="hint">例：0.30</span></label>
+    <input id="cost_amount" name="amount_usd" type="text" inputmode="decimal" placeholder="0.30">
+    <label for="cost_reference">明細の識別（reference）<span class="hint">必須。請求書番号や明細IDなど。</span></label>
+    <input id="cost_reference" name="reference" type="text" required>
+    <label for="cost_checked_on">照合した日</label>
+    <input id="cost_checked_on" name="checked_on" type="date">
+    <label for="cost_evidence">証跡・メモ<span class="hint">必須。</span></label>
+    <textarea id="cost_evidence" name="evidence_note" required></textarea>
+    <p><button type="button" class="secondary" data-cost-submit>実費を記録する</button></p>
+  </form>
+  <div class="notice" data-cost-result hidden></div>
 </div>
 
 {% if reviews | length > 1 %}

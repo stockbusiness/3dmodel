@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}品質比較｜3Dアート品質検証{% endblock %}
+{% block content %}
+<p class="footnote"><a href="/experiments/{{ experiment.id }}">← {{ experiment.name }}</a></p>
+<h1>品質比較
+  {% if not revealed %}<span class="badge warn">ブラインド</span>
+  {% else %}<span class="badge ok">開示済み</span>{% endif %}
+</h1>
+
+{% if not revealed %}
+<div class="notice warn">
+  <strong>どちらのサービスの結果かは伏せています。</strong>
+  先入観なく比べられるようにするためです。両方の評価が終わると自動で開示されます。
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3 style="margin-top:0">元画像</h3>
+  <div class="grid two">
+    <div><img class="thumb" src="/api/files/{{ variant.id }}?kind=variant" alt="元画像"></div>
+    <div>
+      <dl class="kv">
+        <dt>題材</dt><dd><a href="/assets/{{ asset.id }}">{{ asset.title or "（無題）" }}</a></dd>
+        <dt>題材タグ</dt><dd>{{ subject_tags.get(asset.subject_tag, asset.subject_tag) }}</dd>
+        <dt>寸法</dt><dd>{{ variant.width }} × {{ variant.height }} px</dd>
+        <dt>画像ID</dt><dd class="mono">{{ variant.id }}</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<div class="compare-controls panel">
+  <h3 style="margin-top:0">表示の操作（A・Bに同時に効きます）</h3>
+  <div class="viewer-controls">
+    <button type="button" class="secondary" data-all-orbit="0deg 75deg auto">正面</button>
+    <button type="button" class="secondary" data-all-orbit="90deg 75deg auto">横</button>
+    <button type="button" class="secondary" data-all-orbit="180deg 75deg auto">背面</button>
+    <button type="button" class="secondary" data-all-orbit="0deg 5deg auto">真上</button>
+    <button type="button" class="secondary" data-all-reset>表示をリセット</button>
+  </div>
+  <div class="viewer-controls">
+    <button type="button" class="secondary" data-all-bg="#eceef2">背景：明</button>
+    <button type="button" class="secondary" data-all-bg="#3a3d45">背景：暗</button>
+    <button type="button" class="secondary" data-all-bg="#ffffff">背景：白</button>
+  </div>
+  <div class="viewer-controls">
+    <button type="button" class="secondary" data-set-front>いまの向きを「正面」にする</button>
+    <button type="button" class="secondary" data-clear-front>基準角度を戻す</button>
+  </div>
+  <p class="footnote">
+    正面は生成側の向きと一致するとは限りません。見やすい向きに回してから
+    「いまの向きを『正面』にする」を押すと、この端末でこの比較の基準角度として覚えます。
+  </p>
+
+  <div class="viewer-controls" data-mobile-switch hidden>
+    <span class="footnote">スマホでは重いモデルを同時に読み込まないよう、切り替えて表示します。</span>
+    {% for entry in entries %}
+      <button type="button" class="secondary" data-show-label="{{ entry.label }}">{{ entry.label }} を表示</button>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid two" data-compare-host>
+  {% for entry in entries %}
+  <div class="panel" data-compare-pane data-label="{{ entry.label }}">
+    <h2 style="margin-top:0;border-left-color:{{ '#1d4ed8' if entry.label == 'A' else '#7c3aed' }}">
+      {{ entry.label }}
+      {% if revealed %}
+        <span class="badge">{{ entry.public.provider }}</span>
+      {% endif %}
+    </h2>
+
+    {% if entry.artifact %}
+      <div data-viewer-host>
+        <model-viewer
+          src="/api/files/{{ entry.artifact.id }}?kind=artifact"
+          alt="生成された3Dモデル {{ entry.label }}"
+          camera-controls
+          touch-action="pan-y"
+          loading="lazy"
+          data-base-orbit="0deg 75deg auto"
+          camera-orbit="0deg 75deg auto"
+          shadow-intensity="0.6"></model-viewer>
+        <div class="viewer-status notice" data-viewer-status hidden></div>
+      </div>
+    {% else %}
+      <p>まだ表示できるモデルがありません（{{ tech_statuses.get(entry.generation.tech_status, entry.generation.tech_status) }}）。</p>
+    {% endif %}
+
+    <dl class="kv">
+      <dt>技術状態</dt><dd>{{ tech_statuses.get(entry.generation.tech_status, entry.generation.tech_status) }}</dd>
+      <dt>評価</dt>
+      <dd>
+        {% if entry.review %}
+          {{ verdicts.get(entry.review.verdict, entry.review.verdict) }}
+          {% if entry.is_pass %}<span class="badge ok">教室利用合格</span>{% endif %}
+        {% else %}
+          <span class="badge warn">未評価</span>
+        {% endif %}
+      </dd>
+    </dl>
+
+    {% if entry.pass_blockers %}
+      <p class="footnote">合格になっていない理由：{{ entry.pass_blockers | join("／") }}</p>
+    {% endif %}
+
+    <p>
+      <a class="button secondary" href="/generations/{{ entry.generation.id }}">
+        {{ "評価を改訂する" if entry.review else "この結果を評価する" }}
+      </a>
+    </p>
+
+    {% if revealed %}
+    <details class="advanced">
+      <summary>運営用の詳細と形状メトリクス（記録用。品質判定には使いません）</summary>
+      <dl class="kv">
+        <dt>サービス</dt><dd>{{ entry.public.provider }}</dd>
+        <dt>プリセット</dt><dd>{{ entry.public.preset_name or entry.public.preset_code or "—" }}</dd>
+        <dt>モデルID</dt><dd class="mono">{{ entry.public.model_id or "—" }}</dd>
+        <dt>頂点数</dt><dd>{{ entry.metrics.get("vertex_count", "未取得") }}</dd>
+        <dt>三角形数</dt><dd>{{ entry.metrics.get("triangle_count", "未取得") }}</dd>
+        <dt>テクスチャ枚数</dt><dd>{{ entry.metrics.get("texture_count", "未取得") }}</dd>
+      </dl>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% if not revealed %}
+<h2>開示する</h2>
+<div class="panel">
+  <p class="footnote">
+    両方の評価が終わると自動で開示されます。評価の前に開示すると結果の見方に影響するため、
+    手動で開示する場合は理由が必要です。監査ログに残ります。
+  </p>
+  <form data-reveal="{{ comparison.id }}">
+    <label for="reveal_reason">開示の理由<span class="hint">必須。</span></label>
+    <input id="reveal_reason" name="reason" type="text" required>
+    <p><button type="button" class="secondary" data-reveal-submit>いま開示する</button></p>
+  </form>
+  <div class="notice" data-reveal-result hidden></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="/static/viewer.js"></script>
+<script src="/static/compare.js"></script>
+{% endblock %}

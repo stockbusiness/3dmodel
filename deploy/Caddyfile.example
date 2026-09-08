@@ -1,0 +1,60 @@
+# 限定公開環境の Caddy 設定例（仕様第3章・第12章）
+#
+# すべてダミー値です。実際のFQDN・許可元IP・認証情報に置き換えてください。
+# このファイルはリポジトリに置く「例」であり、本番の値をここに書かないでください。
+#
+# 前提：
+# - 小型VPS1台に、このリポジトリの compose を配置する
+# - Caddy が自動HTTPSを行い、その前段でIP制限またはBasic認証をかける
+# - その内側に、本システムの運営ログインがある（二重になっているのは意図的）
+
+{
+	# 証明書の取得に使う連絡先。ダミー値
+	email admin@example.invalid
+}
+
+art3d.example.invalid {
+	# --- 前段の絞り込み（仕様第12章：IP制限またはBasic認証を必須にする）-------
+	#
+	# 方法1：許可元IPだけを通す。講師の自宅・教室の固定IPがある場合に向く
+	@allowed_sources {
+		remote_ip 203.0.113.10 203.0.113.11 198.51.100.0/24
+	}
+
+	# 方法2：Basic認証。IPが固定できない場合に使う
+	# ハッシュは次のコマンドで作る（平文をこのファイルに書かない）：
+	#   docker run --rm caddy caddy hash-password --plaintext 'ここに入力'
+	basic_auth {
+		# ダミーのハッシュ。必ず作り直すこと
+		teacher $2a$14$DUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDUMMYDU
+	}
+
+	# 方法1と2のどちらか一方でもよいし、両方を重ねてもよい。
+	# 両方を重ねる場合、上の basic_auth は残したまま次を有効にする：
+	# @denied not remote_ip 203.0.113.10 203.0.113.11 198.51.100.0/24
+	# respond @denied "Not found" 404
+
+	# --- 本体へ渡す ----------------------------------------------------------
+	reverse_proxy 127.0.0.1:8000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# --- 保護のためのヘッダー ------------------------------------------------
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# アップロードと成果物の配信に合わせる（画像10MiB、GLB 100MiB）
+	request_body {
+		max_size 110MB
+	}
+
+	log {
+		output file /var/log/caddy/art3d.log
+		# APIキーや署名URLが混ざらないよう、本文は記録しない
+		format json
+	}
+}
