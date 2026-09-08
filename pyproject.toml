@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Tripo公式SDK。版を固定する（docs/provider-contracts.md）。
+# A3.5 で実生成を行うときに入れる。入っていなくてもモック検証は動く
+tripo = [
+    # async extra を入れて aiohttp 実装を使う。
+    # 入れないとSDKは自前のHTTP実装（legacy_client_impl）にフォールバックする
+    "tripo3d[async]==0.4.2",
+]
 dev = [
     "pytest>=8.3,<9",
     "ruff>=0.8,<0.9",

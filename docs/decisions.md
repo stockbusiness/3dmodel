@@ -86,6 +86,11 @@
 | A-24 | 日時列に `UtcDateTime` 型を使い、読み出し時にUTCを付け直す | SQLite は日時にタイムゾーンを保存しないため、素の `DateTime` では naive な値が返り aware な値と比較・減算できない（A2で実際に不具合になった） | `app/models/tables.py` の全日時列 | — |
 | A-25 | 生成結果画面の5秒ポーリングを A2 で実装した | A2で生成が非同期になったため、これが無いと受付後に状態が更新されず画面が使えない。一覧の15〜30秒ポーリングと第6.4章の残りは計画どおり A4 | `app/static/generation.js` | — |
 | A-26 | 429 を送信時に受けたら `queued` に戻して待つ | 429 は事業者が要求を受け付けていないことを意味するため、再送しても二重課金にならない。状態確認時の429はバックオフのみ（状態は running のまま） | `app/services/worker_steps.py` | — |
+| A-27 | Tripo の `model_version` は SDK の既定値 `v2.5-20250123` を採用 | より新しい版（`v3.1-20260211` 等）もあるが、品質と価格の差を公式資料で確認できていない。推測で新しい版を選ばない | `tripo-standard` プリセット | 価格確認後に見直す（UNVERIFIED U-10） |
+| A-28 | Meshy の `should_texture` を true にする（APIの既定は false） | 既定はテクスチャ無しの下書きメッシュで、教室での品質評価に使えない。**課金が増える側の選択**であることを記録する | `meshy-standard` プリセット | false に戻せば下書きのみ |
+| A-29 | Meshy へ画像を `data:` URI で送る | 公式CLIも同じ方法をとる。こちらの画像を公開URLに置かずに済み、仕様第12章に沿う。10MiBの画像で本文が約13MBになる点は許容する | `app/providers/meshy.py` | — |
+| A-30 | 成果物の配信ホストは設定で与え、既定は空にする | 配信ホストを公式資料で確認できていない。空のあいだは何も取得しないので、推測のホストを許可してしまうことがない | `download_guard`、`.env` | ホスト確認後に設定 |
+| A-31 | Tripo公式SDKの `TRIPO_DISABLE_GEO_DETECTION` を `setdefault` ではなく上書きで設定する | `"0"` を明示されると位置検出が動いてしまう。外部への接続は仕様第12章で限定している | `app/providers/tripo.py` | — |
 
 ---
 
@@ -98,6 +103,18 @@
 | S-3 | APIキーの投入経路 | `.env` への直接記入をユーザーが行い、エージェントは内容を読まない・出力しない運用でよいか |
 | S-4 | 権限モデル（B-2）の帰結 | **確定済み**：ユーザー回答により案1を採用。講師アカウントが上限額・送信枠を変更できることを許容し、抑止は理由入力と監査ログによる |
 | S-5 | CSP を2点だけ緩めている | model-viewer を動かすために `script-src` に `'wasm-unsafe-eval'`、`style-src` に `'unsafe-inline'` が必要。いずれも外部への接続は許しておらず、スクリプトの inline も許していない。これで問題ないか確認をお願いしたい。厳格化する場合は、model-viewer を諦めるか、テクスチャ・WebAssemblyを使わない自前ビューアーを作ることになる |
+
+---
+
+## A3で判明した、事業者SDKの扱いに関する重要事項
+
+`docs/provider-contracts.md` に詳細を記録した。特に次の2点は、そのまま使うと
+仕様第12章に反するため、こちらで対処している。
+
+| 内容 | 対処 |
+| --- | --- |
+| Tripo公式SDKは、成果物のダウンロードでSSL証明書の検証に失敗すると、**検証を無効にして取得し直す**（`verify_mode = ssl.CERT_NONE`） | SDKのダウンロード経路を使わず、`app/services/download_guard.py` で自前に取得する |
+| Tripo公式SDKは import 時にバックグラウンドで第三者のIP位置情報サービスへ問い合わせる（`ip-api.com` と `ipinfo.io` は**平文HTTP**） | アダプターが import より前に `TRIPO_DISABLE_GEO_DETECTION=1` を必ず設定する。Dockerfile にも設定する |
 
 ---
 
@@ -140,8 +157,13 @@
 
 | ID | 内容 | 確認先（仕様第4章） |
 | --- | --- | --- |
-| U-1 | Tripo公式SDKの採用タグ/コミット、画像→3DのモデルID、パラメーター、返却形式、エラー、タイムアウト、作成系の自動リトライ挙動 | tripo-python-sdk |
-| U-2 | Meshy image-to-3D の公式契約（エンドポイント、パラメーター、状態値、成果物取得方法、cancel対応可否） | docs.meshy.ai |
+| U-1 | ~~Tripo公式SDKの採用タグ/コミット、モデルID、パラメーター、返却形式、エラー、タイムアウト、作成系の自動リトライ挙動~~ → **確認済み（2026-09-08）**：`tripo3d` 0.4.2、タグ `v0.4.2`。詳細は `docs/provider-contracts.md` | tripo-python-sdk |
+| U-2 | ~~Meshy image-to-3D の公式契約（エンドポイント、パラメーター、状態値、成果物取得方法）~~ → **確認済み（2026-09-08）**：公式CLI `meshy-cli` 0.2.0 のソースによる。ただし `DELETE` が実行中タスクの取消になるかは未確認 | meshy-dev/meshy-cli |
+| U-7 | 両社：成果物を配信するホスト名。`APP_TRIPO_DOWNLOAD_HOSTS` / `APP_MESHY_DOWNLOAD_HOSTS` が空のあいだは何も取得しない | 実物のURL、または公式資料 |
+| U-8 | 両社：レート制限の具体的な数値。同時外部タスク上限（全体2・各社1）が実際の上限以下かを確認できていない | 公式資料 |
+| U-9 | Meshy：`DELETE /image-to-3d/{id}` が実行中タスクの取消になるか、課金はどうなるか。確認できるまで取消は未対応 | docs.meshy.ai |
+| U-10 | Tripo：`model_version` をより新しい版にすべきか（品質と価格の差） | 公式資料 |
+| U-11 | Tripo：送信時の `{"type": "jpg"}` 固定申告が PNG/WebP 入力の結果に影響するか | 公式資料 |
 | U-3 | 価格。仕様第11章の参照値（Tripo 標準テクスチャ付き30credits、1credit=$0.01、HDテクスチャ+10、HD形状+20）は2026-09-08時点の参照であり要再確認。Meshyの単価はTripoと同じと仮定しない | 各pricingページ |
 | U-4 | 送信画像・生成物の事業者側での保持期間、学習利用の可否とopt-out手段、生成物の利用条件 | 各社の規約 |
 | U-5 | ~~同梱する model-viewer の固定バージョンとライセンス~~ → **確認済み**：4.3.1、Apache-2.0。npm から取得し SHA256 を `THIRD_PARTY_NOTICES.md` に記録（2026-09-08） | github.com/google/model-viewer |

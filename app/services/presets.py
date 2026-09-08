@@ -1,7 +1,8 @@
 """固定プリセットの投入（仕様第8章）。
 
-Tripo / Meshy の モデルID・パラメーター・価格は公式資料で未確認のため、
-UNVERIFIED として無効のまま登録する。A3で確認して更新する（仕様第4章）。
+Tripo / Meshy のエンドポイント・モデルID・パラメーター・状態値は
+公式資料で確認済み（2026-09-08、docs/provider-contracts.md）。
+価格とデータ取扱い条件が未確認のため、無効のまま登録する（仕様第4章・第11章）。
 """
 
 from __future__ import annotations
@@ -15,7 +16,15 @@ from app.models import Preset
 
 UNVERIFIED_NOTE = (
     "モデルID・パラメーター・価格・データ取扱い条件を公式資料で未確認。"
-    "A3で確認するまで実生成は選択できません。"
+    "確認するまで実生成は選択できません。"
+)
+
+# A3時点で残っている未確認事項。価格が確認できるまで実生成は選べない
+PRICE_UNVERIFIED_NOTE = (
+    "エンドポイント・モデルID・パラメーター・状態値・エラーは公式資料で確認済み（2026-09-08）。"
+    "1件あたりの価格（クレジット数とUSD単価）、データ保持期間、学習利用の可否とopt-out手段、"
+    "生成物の利用条件が未確認のため、実生成は選べません。"
+    "詳細は docs/provider-contracts.md を参照。"
 )
 
 SEED: list[dict] = [
@@ -36,36 +45,54 @@ SEED: list[dict] = [
         "unverified_note": "",
     },
     {
+        # モデルID・パラメーターは公式SDK tripo3d 0.4.2 の image_to_model の定義で確認済み。
+        # 価格とデータ取扱い条件が未確認のため、無効のままにする
         "code": "tripo-standard",
-        "display_name": "Tripo 標準（未確認）",
+        "display_name": "Tripo 標準（価格未確認）",
         "provider": "tripo",
-        "model_id": "",
-        "settings": {},
-        "version": "0",
-        "sdk_version": "",
+        "model_id": "v2.5-20250123",
+        "settings": {
+            "model_version": "v2.5-20250123",
+            "texture": True,
+            "pbr": True,
+            "texture_quality": "standard",
+            "geometry_quality": "standard",
+            "texture_alignment": "original_image",
+            "export_uv": True,
+        },
+        "version": "1",
+        "sdk_version": "tripo3d==0.4.2",
         "is_enabled": False,
         "price_max_micro_usd": None,
         "price_version": "",
         "price_checked_on": None,
         "price_source_url": "https://developers.tripo3d.ai/en/pricing",
         "is_unverified": True,
-        "unverified_note": UNVERIFIED_NOTE,
+        "unverified_note": PRICE_UNVERIFIED_NOTE,
     },
     {
+        # エンドポイント・パラメーター・状態値は公式CLI meshy-cli 0.2.0 のソースで確認済み。
+        # Meshy は「モードがモデル」で、standard は meshy-7 に対応する
         "code": "meshy-standard",
-        "display_name": "Meshy 標準（未確認）",
+        "display_name": "Meshy 標準（価格未確認）",
         "provider": "meshy",
-        "model_id": "",
-        "settings": {},
-        "version": "0",
-        "sdk_version": "",
+        "model_id": "standard (meshy-7)",
+        "settings": {
+            "model_type": "standard",
+            "should_texture": True,
+            "enable_pbr": True,
+            "texture_resolution": "4k",
+            "target_formats": ["glb"],
+        },
+        "version": "1",
+        "sdk_version": "meshy-cli==0.2.0 で確認した公式契約に基づく自前のHTTP実装",
         "is_enabled": False,
         "price_max_micro_usd": None,
         "price_version": "",
         "price_checked_on": None,
         "price_source_url": "https://docs.meshy.ai/en/api/pricing",
         "is_unverified": True,
-        "unverified_note": UNVERIFIED_NOTE,
+        "unverified_note": PRICE_UNVERIFIED_NOTE,
     },
 ]
 
@@ -144,6 +171,32 @@ def seed_presets(db: Session) -> int:
         )
         created += 1
     return created
+
+
+def refresh_placeholder_presets(db: Session) -> int:
+    """まだ一度も内容が入っていないプリセット行を、確認済みの定義に更新する。
+
+    使われたことのある行（モデルIDが入っているもの）は書き換えない。
+    過去の実行は generations のスナップショットを見るため、この更新では変わらない
+    （仕様第8章「過去実行を後から設定変更で書き換えない」）。
+    """
+    updated = 0
+    for item in SEED:
+        if not item["model_id"]:
+            continue
+        preset = db.scalar(select(Preset).where(Preset.code == item["code"]))
+        if preset is None or preset.model_id:
+            continue
+        preset.model_id = item["model_id"]
+        preset.display_name = item["display_name"]
+        preset.settings_json = json.dumps(item["settings"], ensure_ascii=False)
+        preset.version = item["version"]
+        preset.sdk_version = item["sdk_version"]
+        preset.price_source_url = item["price_source_url"]
+        preset.unverified_note = item["unverified_note"]
+        updated += 1
+    db.flush()
+    return updated
 
 
 def selectable_reasons(preset: Preset, *, live: bool) -> list[str]:

@@ -11,9 +11,10 @@ WORKDIR /srv/app
 # uv は PyPI から版を固定して入れる
 RUN pip install --no-cache-dir "uv==0.8.17"
 
-# 依存はロックファイルどおりに固定して入れる
+# 依存はロックファイルどおりに固定して入れる。
+# tripo extra は Tripo公式SDK（版固定）。実生成は LIVE_API_ENABLED で別途制御する
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev --extra tripo
 
 COPY app ./app
 COPY migrations ./migrations
@@ -26,7 +27,10 @@ RUN mkdir -p /srv/data && \
     chown -R app:app /srv/app /srv/data
 USER app
 
-ENV APP_DATA_DIR=/srv/data
+ENV APP_DATA_DIR=/srv/data \
+    # Tripo公式SDKが import 時に第三者のIP位置情報サービスへ問い合わせるのを止める
+    # （アダプター側でも設定するが、二重に押さえておく）
+    TRIPO_DISABLE_GEO_DETECTION=1
 
 EXPOSE 8000
 

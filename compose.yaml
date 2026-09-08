@@ -15,6 +15,8 @@ services:
       APP_GLOBAL_COST_CAP_USD: ${APP_GLOBAL_COST_CAP_USD:-}
       APP_CALIBRATION_TARGET_COUNT: ${APP_CALIBRATION_TARGET_COUNT:-0}
       APP_SESSION_TTL_HOURS: ${APP_SESSION_TTL_HOURS:-12}
+      APP_TRIPO_DOWNLOAD_HOSTS: ${APP_TRIPO_DOWNLOAD_HOSTS:-}
+      APP_MESHY_DOWNLOAD_HOSTS: ${APP_MESHY_DOWNLOAD_HOSTS:-}
     volumes:
       - data:/srv/data
     restart: unless-stopped
@@ -33,6 +35,11 @@ services:
       APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY を .env に設定してください}
       APP_DATA_DIR: /srv/data
       APP_LIVE_API_ENABLED: ${APP_LIVE_API_ENABLED:-false}
+      APP_TRIPO_DOWNLOAD_HOSTS: ${APP_TRIPO_DOWNLOAD_HOSTS:-}
+      APP_MESHY_DOWNLOAD_HOSTS: ${APP_MESHY_DOWNLOAD_HOSTS:-}
+      # APIキーは worker だけが使う（外部送信を行うのは worker のため）
+      TRIPO_API_KEY: ${TRIPO_API_KEY:-}
+      MESHY_API_KEY: ${MESHY_API_KEY:-}
     volumes:
       - data:/srv/data
     depends_on:
