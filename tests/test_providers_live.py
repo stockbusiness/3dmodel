@@ -338,9 +338,9 @@ def test_external_uri_glb_from_a_real_adapter_is_rejected(operator, monkeypatch)
 
 
 def test_real_presets_cannot_be_used_for_live_generation(operator):
-    """データ取扱い条件が未確認のあいだ、実生成に選べない（仕様第6.3章・第11章）。
+    """契約と運用の前提が整うまで、実生成に選べない（仕様第6.3章・第11章）。
 
-    価格は確認済みになったが、それだけでは選べるようにしない。
+    価格とデータ取扱い条件は確認済みになったが、それだけでは選べるようにしない。
     """
     from sqlalchemy import select
 
@@ -384,7 +384,7 @@ def test_confirmed_prices_are_stored_as_integers(db_ready):
         for preset in (tripo, meshy):
             assert isinstance(preset.price_max_micro_usd, int)
             assert preset.is_unverified is False
-            # 価格が確認できても、データ取扱い条件が未確認のあいだは有効にしない
+            # 価格とデータ取扱い条件が確認できても、それだけでは有効にしない
             assert preset.is_enabled is False
 
 

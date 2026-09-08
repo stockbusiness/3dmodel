@@ -1,9 +1,9 @@
 """固定プリセットの投入（仕様第8章）。
 
-Tripo / Meshy のエンドポイント・モデルID・パラメーター・状態値・**価格**は
-公式資料で確認済み（2026-09-08、docs/provider-contracts.md）。
-データ取扱い条件（保持期間・学習利用の可否とopt-out・生成物の利用条件）が
-未確認のため、**無効のまま**登録する（仕様第4章・第11章）。
+Tripo / Meshy のエンドポイント・モデルID・パラメーター・状態値・**価格**・
+**データ取扱い条件**は公式資料で確認済み（2026-09-08、docs/provider-contracts.md）。
+有料アカウントの契約と、成果物の配信ホスト・公開範囲の確認が済んでいないため、
+**無効のまま**登録する（仕様第4章・第11章）。
 """
 
 from __future__ import annotations
@@ -20,11 +20,13 @@ UNVERIFIED_NOTE = (
     "確認するまで実生成は選択できません。"
 )
 
-# 価格は確認できた。残るのはデータ取扱い条件で、これが確認できるまで実生成は選べない
+# 価格・データ取扱い条件は確認できた。残るのは契約と運用の前提で、
+# それが整うまで実生成は選べない
 DATA_TERMS_UNVERIFIED_NOTE = (
-    "エンドポイント・モデルID・パラメーター・状態値・エラー・価格は公式資料で確認済み（2026-09-08）。"
-    "データ保持期間、学習利用の可否とopt-out手段、生成物の利用条件が未確認のため、"
-    "実生成は選べません。詳細は docs/provider-contracts.md を参照。"
+    "エンドポイント・モデルID・パラメーター・状態値・エラー・価格・"
+    "データ取扱い条件は公式資料で確認済み（2026-09-08）。"
+    "有料アカウントの契約、成果物の配信ホストの設定、生成物の公開範囲の確認が"
+    "済んでいないため、実生成は選べません。詳細は docs/provider-contracts.md を参照。"
 )
 
 # --- 確認済みの価格（仕様第11章。金額は micro-USD の整数で持つ） ----------------
@@ -92,7 +94,7 @@ SEED: list[dict] = [
         },
         "version": "1",
         "sdk_version": "tripo3d==0.4.2",
-        # データ取扱い条件が未確認のため無効のまま
+        # 契約と運用の前提が整うまで無効のまま
         "is_enabled": False,
         "price_max_micro_usd": CONFIRMED_PRICES["tripo-standard"]["price_max_micro_usd"],
         "price_version": CONFIRMED_PRICES["tripo-standard"]["price_version"],
@@ -117,7 +119,7 @@ SEED: list[dict] = [
         },
         "version": "1",
         "sdk_version": "meshy-cli==0.2.0 で確認した公式契約に基づく自前のHTTP実装",
-        # データ取扱い条件が未確認のため無効のまま
+        # 契約と運用の前提が整うまで無効のまま
         "is_enabled": False,
         "price_max_micro_usd": CONFIRMED_PRICES["meshy-standard"]["price_max_micro_usd"],
         "price_version": CONFIRMED_PRICES["meshy-standard"]["price_version"],
@@ -238,7 +240,7 @@ def apply_confirmed_prices(db: Session) -> int:
     上書きしないため。過去の実行は generations のスナップショットを見るので、
     この更新では変わらない（仕様第8章）。
 
-    `is_enabled` はここでは触らない。データ取扱い条件が未確認のあいだ、
+    `is_enabled` はここでは触らない。契約と運用の前提が整うまで、
     実生成に選べない状態を保つ。
     """
     updated = 0
