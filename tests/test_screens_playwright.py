@@ -217,6 +217,8 @@ def test_main_screens_render_without_console_errors(browser, seeded):
         f"/experiments/{seeded['experiment']}/report",
         f"/comparisons/{seeded['comparison']}",
         f"/generations/{seeded['generations'][0]}",
+        "/admin",
+        "/admin/artifacts",
     ):
         page.goto(f"{base}{path}")
         page.wait_for_timeout(600)
@@ -344,3 +346,54 @@ def test_mobile_layout_stacks_and_meets_size_rules(browser, seeded):
     )
     assert overflow <= 1, f"横スクロールが発生している（{overflow}px）"
     page.close()
+
+
+def test_admin_screen_shows_state_without_leaking_the_key(browser, seeded):
+    """管理画面が実際に動き、APIキーの値も伏せた事業者名も出さないこと。
+
+    仕様第6.5章（ブラインド）と第12章（鍵を出さない）を、
+    描画後のHTMLに対して確かめる。
+    """
+    page = browser.new_page(viewport={"width": 1280, "height": 1000})
+    errors: list[str] = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    base = seeded["base"]
+    _login(page, base)
+
+    page.goto(f"{base}/admin")
+    page.wait_for_timeout(400)
+    html = page.content()
+    # 事業者ごとの状態が出ている
+    assert "tripo" in html and "meshy" in html
+    assert "自己診断" in html
+    # 実APIは既定で無効なので、接続テストのボタンは押せない
+    button = page.locator("[data-connection-test='tripo']")
+    assert button.is_disabled()
+
+    # 保存領域の点検は外部通信をしないのでこの場で動かせる
+    page.click("#storage-audit")
+    page.wait_for_selector("#storage-result .notice", timeout=5000)
+    assert page.locator("#storage-result").inner_text().strip()
+
+    page.goto(f"{base}/admin/artifacts")
+    page.wait_for_timeout(400)
+    artifacts_html = page.content()
+    assert "成果物の管理" in artifacts_html
+
+    # この module のフィクスチャは共有で、先行する試験が開示することがある。
+    # 開示済みならサービス名が出るのが正しいので、状態を見てから確かめる。
+    rows = page.evaluate("async () => (await (await fetch('/api/admin/artifacts')).json()).rows")
+    assert rows, "成果物がありません"
+    if any(row["blind"] for row in rows):
+        assert "評価確定まで非表示" in artifacts_html
+        for row in rows:
+            if row["blind"]:
+                assert row["provider"] is None
+                assert row["preset_name"] is None
+        for secret in ("mock_a", "mock_b", "mock-a-standard", "mock-b-standard"):
+            assert secret not in artifacts_html, secret
+
+    page.close()
+    assert errors == [], errors

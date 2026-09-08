@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}成果物の管理{% endblock %}
+{% block content %}
+<p class="footnote"><a href="/admin">← 管理</a></p>
+<h1>成果物の管理</h1>
+
+<div class="notice warn">
+  <strong>ブラインド評価中の結果はサービス名を伏せています。</strong>
+  この画面から評価前に事業者が分かってしまわないようにするためです（仕様第6.5章）。
+  また<strong>この画面に削除機能はありません</strong>（仕様第9章）。
+</div>
+
+<div class="panel">
+  <dl class="kv">
+    <dt>件数</dt>
+    <dd>
+      {{ summary.count }} 件
+      <span class="footnote">（実API {{ summary.live_count }} 件・モック {{ summary.mock_count }} 件。混ぜて数えていません）</span>
+    </dd>
+    <dt>合計サイズ</dt>
+    <dd>{{ summary.total_bytes | bytes }}</dd>
+    <dt>保存検査NG</dt>
+    <dd>
+      {% if summary.inspection_failed %}
+        <span class="badge warn">{{ summary.inspection_failed }} 件</span>
+      {% else %}0 件{% endif %}
+    </dd>
+    <dt>メトリクス未抽出</dt>
+    <dd>{{ summary.without_metrics }} 件</dd>
+  </dl>
+</div>
+
+<form method="get" action="/admin/artifacts" class="panel">
+  <label for="experiment_id">検証セット</label>
+  <select id="experiment_id" name="experiment_id">
+    <option value="">すべて</option>
+    {% for e in experiments %}
+      <option value="{{ e.id }}" {% if e.id == selected_experiment_id %}selected{% endif %}>{{ e.name }}</option>
+    {% endfor %}
+  </select>
+  <label>
+    <input type="checkbox" name="failed_only" value="true" {% if failed_only %}checked{% endif %}>
+    保存検査NGのみ
+  </label>
+  <button type="submit">絞り込む</button>
+</form>
+
+{% if not rows %}
+  <p>該当する成果物がありません。</p>
+{% else %}
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>作成</th><th>検証セット・題材</th><th>サービス</th>
+        <th>状態</th><th>大きさ</th><th>保存検査</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="footnote">{{ row.created_at[:16] | replace("T", " ") }}</td>
+        <td>
+          <a href="/experiments/{{ row.experiment_id }}">{{ row.experiment_name }}</a><br>
+          <a href="/assets/{{ row.asset_id }}">{{ row.asset_title or "（無題）" }}</a>
+        </td>
+        <td>
+          {% if row.blind %}
+            <span class="badge">{{ row.blind_label or "?" }}</span>
+            <span class="footnote">評価確定まで非表示</span>
+          {% else %}
+            {{ row.provider }}<br><span class="footnote">{{ row.preset_name or "" }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {{ row.tech_status }}
+          {% if row.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}
+        </td>
+        <td class="mono">{{ row.bytes | bytes }}</td>
+        <td>
+          {% if row.inspection_ok %}
+            <span class="badge ok">OK</span>
+          {% else %}
+            <span class="badge warn">NG</span>
+            <span class="footnote">{{ row.inspection_note }}</span>
+          {% endif %}
+          {% if not row.has_metrics %}<br><span class="footnote">メトリクス未抽出</span>{% endif %}
+        </td>
+        <td>
+          <a href="/generations/{{ row.generation_id }}">生成の詳細</a><br>
+          <a href="/api/files/{{ row.artifact_id }}?kind=artifact">ダウンロード</a><br>
+          <button type="button" class="secondary" data-verify="{{ row.artifact_id }}">保存物を照合</button>
+          <span class="footnote" id="verify-{{ row.artifact_id }}"></span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="footnote">新しい順に最大200件を表示しています。</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/admin.js" defer></script>
+{% endblock %}

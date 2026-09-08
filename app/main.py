@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routes import assets, auth_routes, experiments, files, generations, reports
+from app.routes import admin, assets, auth_routes, experiments, files, generations, reports
 from app.templating import TEMPLATES_DIR  # noqa: F401  （テンプレート探索の初期化）
 
 # CSPの外部接続は限定する。model-viewer は同一オリジンの固定版のみ（仕様第12章）。
@@ -47,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(generations.router)
     app.include_router(reports.router)
     app.include_router(files.router)
+    app.include_router(admin.router)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):

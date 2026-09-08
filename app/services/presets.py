@@ -261,7 +261,16 @@ def apply_confirmed_prices(db: Session) -> int:
 
 
 def selectable_reasons(preset: Preset, *, live: bool) -> list[str]:
-    """実生成を選べない理由を日本語で返す（仕様第6.3章）。空なら選択可。"""
+    """実生成を選べない理由を日本語で返す（仕様第6.3章）。空なら選択可。
+
+    仕様第6.3章は「キー未設定、価格未確認、無効プリセット、利用同意未取得、
+    送信枠なし、上限額超過は実生成を選択不可とする」と定める。
+    このうちプリセット単体で判定できるものをここで返す
+    （同意・送信枠・上限額は生成受付時に `generation.check_can_submit` が見る）。
+    """
+    # 循環importを避けるため関数内でimportする
+    from app.services import provider_health
+
     reasons: list[str] = []
     if not preset.is_enabled:
         reasons.append("プリセットが無効です")
@@ -269,4 +278,6 @@ def selectable_reasons(preset: Preset, *, live: bool) -> list[str]:
         reasons.append("価格・モデルIDが未確認です")
     if live and preset.price_max_micro_usd is None:
         reasons.append("上限額を見積もれません")
+    if live:
+        reasons.extend(provider_health.blocking_reasons(preset.provider))
     return reasons

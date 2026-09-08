@@ -34,6 +34,7 @@ from app.providers.base import (
     ERROR_PROVIDER_FAILED,
     ERROR_RATE_LIMITED,
     ERROR_TRANSPORT,
+    ConnectionCheck,
     DownloadedResult,
     Estimate,
     ProviderAdapter,
@@ -199,6 +200,28 @@ class TripoAdapter(ProviderAdapter):
         if status in _RUNNING:
             return StatusResult(state="running", progress_percent=progress)
         return StatusResult(state="running", progress_percent=progress)
+
+    def check_connection(self) -> ConnectionCheck:
+        """公式SDKの `get_balance()`（GET /user/balance）で認証だけを確かめる。
+
+        読み取り操作であり、生成を行わないので**課金は発生しない**。
+        残高は参考表示にとどめ、金額として保存しない（仕様第11章）。
+        """
+        settings = get_settings()
+        try:
+            balance = _run(
+                lambda client: client.get_balance(),
+                float(settings.status_timeout_seconds),
+            )
+        except ProviderError:
+            raise
+        except Exception as exc:  # SDKの例外を正規化する
+            raise _classify(exc) from exc
+        return ConnectionCheck(
+            ok=True,
+            detail="認証が通りました（生成は行っていないため課金は発生していません）",
+            note=f"事業者側のクレジット残高（参考）：{balance.balance}（凍結分 {balance.frozen}）",
+        )
 
     def download_result(self, result_ref: str) -> DownloadedResult:
         """SDKのダウンロードは使わず、自前の検査つき取得を行う（仕様第12章）。"""

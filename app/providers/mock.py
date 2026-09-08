@@ -23,6 +23,7 @@ from app.providers.base import (
     ERROR_DOWNLOAD_FAILED,
     ERROR_PROVIDER_FAILED,
     ERROR_RATE_LIMITED,
+    ConnectionCheck,
     DownloadedResult,
     Estimate,
     ProviderAdapter,
@@ -129,6 +130,14 @@ class MockAdapter(ProviderAdapter):
         if result_ref not in SAMPLES or not path.is_file():
             raise ProviderError("サンプルGLBが見つかりません", kind=ERROR_DOWNLOAD_FAILED)
         return DownloadedResult(data=path.read_bytes())
+
+    def check_connection(self) -> ConnectionCheck:
+        """モックは外部へ出ないので常に成功する。"""
+        return ConnectionCheck(
+            ok=True,
+            detail="モックのため外部通信は行いません",
+            note="実APIの疎通確認にはなりません",
+        )
 
     def cancel(self, provider_task_id: str) -> None:
         scenario, _ = self._parse(provider_task_id)

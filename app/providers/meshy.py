@@ -33,6 +33,7 @@ from app.providers.base import (
     ERROR_PROVIDER_FAILED,
     ERROR_RATE_LIMITED,
     ERROR_TRANSPORT,
+    ConnectionCheck,
     DownloadedResult,
     Estimate,
     ProviderAdapter,
@@ -200,6 +201,36 @@ class MeshyAdapter(ProviderAdapter):
             raise ProviderError("通信に失敗しました", kind=ERROR_TRANSPORT) from exc
 
         _raise_for_status(response)
+
+    def check_connection(self) -> ConnectionCheck:
+        """一覧の取得（GET /image-to-3d）で認証だけを確かめる。
+
+        公式CLIが使う読み取り操作であり、生成を行わないので**課金は発生しない**。
+        件数だけを見て、応答の中身は画面に返さない。
+        """
+        settings = get_settings()
+        try:
+            with self._client(settings.status_timeout_seconds) as client:
+                response = client.get(
+                    RESOURCE, params={"page_num": 1, "page_size": 1, "sort_by": "-created_at"}
+                )
+        except httpx.TimeoutException as exc:
+            raise ProviderError("接続テストがタイムアウトしました", kind=ERROR_TRANSPORT) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError("通信に失敗しました", kind=ERROR_TRANSPORT) from exc
+
+        _raise_for_status(response)
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise ProviderError("応答の形式が想定と異なります", kind=ERROR_TRANSPORT) from exc
+
+        count = len(body) if isinstance(body, list) else 0
+        return ConnectionCheck(
+            ok=True,
+            detail="認証が通りました（生成は行っていないため課金は発生していません）",
+            note=f"直近の依頼を {count} 件読み取れました",
+        )
 
     def download_result(self, result_ref: str) -> DownloadedResult:
         settings = get_settings()
