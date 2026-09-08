@@ -18,7 +18,7 @@ from sqlalchemy import select
 from app.auth import hash_password
 from app.db import session_scope
 from app.models import Operator
-from app.services.presets import seed_presets
+from app.services.presets import refresh_placeholder_presets, seed_presets
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -38,7 +38,11 @@ def init_db() -> None:
 
     with session_scope() as db:
         created = seed_presets(db)
-    print(f"DBを最新まで移行しました。プリセットを {created} 件追加しました。")
+        updated = refresh_placeholder_presets(db)
+    print(
+        f"DBを最新まで移行しました。プリセットを {created} 件追加し、"
+        f"{updated} 件を確認済みの内容に更新しました。"
+    )
 
 
 def create_operator(login_name: str, display_name: str, generate: bool) -> None:
@@ -100,7 +104,8 @@ def main() -> None:
     elif args.command == "seed-presets":
         with session_scope() as db:
             created = seed_presets(db)
-        print(f"プリセットを {created} 件追加しました。")
+            updated = refresh_placeholder_presets(db)
+        print(f"プリセットを {created} 件追加し、{updated} 件を更新しました。")
 
 
 if __name__ == "__main__":

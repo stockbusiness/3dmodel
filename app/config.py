@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     # ワーカーの待機秒
     worker_interval_seconds: int = 5
 
+    # 事業者の成果物を取得してよいホスト（仕様第12章）。カンマ区切り。
+    # 既定は空。設定しない限りダウンロードしない。
+    # 公式資料で配信ホストを確認してから設定すること（docs/decisions.md の U-7）
+    tripo_download_hosts: str = ""
+    meshy_download_hosts: str = ""
+
+    # Tripo公式SDKの版を固定する（docs/provider-contracts.md）
+    tripo_sdk_version: str = "0.4.2"
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "app.db"
@@ -60,6 +69,18 @@ class Settings(BaseSettings):
     @property
     def objects_dir(self) -> Path:
         return self.data_dir / "objects"
+
+    @staticmethod
+    def _split_hosts(value: str) -> frozenset[str]:
+        return frozenset(part.strip() for part in value.split(",") if part.strip())
+
+    @property
+    def tripo_allowed_hosts(self) -> frozenset[str]:
+        return self._split_hosts(self.tripo_download_hosts)
+
+    @property
+    def meshy_allowed_hosts(self) -> frozenset[str]:
+        return self._split_hosts(self.meshy_download_hosts)
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
