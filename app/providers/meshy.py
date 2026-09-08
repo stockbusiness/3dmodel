@@ -9,9 +9,11 @@ Meshy に公式の Python SDK は無いため、公式の契約に基づく HTTP
 - 作成: POST /image-to-3d → {"result": "<task_id>"}
 - 取得: GET /image-to-3d/{task_id} → Task
 - 状態: PENDING / IN_PROGRESS / SUCCEEDED / FAILED / CANCELED
-- 削除: DELETE /image-to-3d/{task_id}
-  ただし「実行中のタスクを取り消せるか」は公式資料で確認できていないため、
-  取消は未対応として扱う（仕様第8章：未対応は unsupported）
+- 取消: DELETE /image-to-3d/{task_id}
+  公式資料で「実行中タスクの取消」であることを確認した（2026-09-08）。
+  PENDING の取消は作成時クレジットが返却され、IN_PROGRESS の取消は返却されない。
+  終了済みのタスクは取り消せない。返却の有無を当方では判定できないため、
+  取消しても送信枠は保持する（仕様第8章の状態遷移表どおり）。
 
 入力画像は data: URI として本文に載せる。利用者が入力したURLは扱わないし、
 こちらの画像を公開URLに置くこともしない（仕様第12章）。
@@ -103,8 +105,8 @@ def _raise_for_status(response: httpx.Response) -> None:
 
 class MeshyAdapter(ProviderAdapter):
     name = "meshy"
-    # DELETE は用意されているが、実行中タスクの取消になるかを公式資料で確認できていない
-    supports_cancel = False
+    # DELETE が実行中タスクの取消であることを公式資料で確認済み（第2.2節）
+    supports_cancel = True
 
     def estimate(self, variant: AssetVariant, preset: Preset) -> Estimate:
         amount = preset.price_max_micro_usd
@@ -180,6 +182,24 @@ class MeshyAdapter(ProviderAdapter):
         if status in _RUNNING:
             return StatusResult(state="running", progress_percent=progress)
         return StatusResult(state="running", progress_percent=progress)
+
+    def cancel(self, provider_task_id: str) -> None:
+        """実行中の依頼を取り消す（仕様第8章）。
+
+        公式資料の DELETE /image-to-3d/{id} を使う。
+        取り消せなかった場合（終了済み・見つからない等）は ProviderError を上げ、
+        呼び出し側が「未取消」として照合を続ける。
+        """
+        settings = get_settings()
+        try:
+            with self._client(settings.status_timeout_seconds) as client:
+                response = client.delete(f"{RESOURCE}/{provider_task_id}")
+        except httpx.TimeoutException as exc:
+            raise ProviderError("取消がタイムアウトしました", kind=ERROR_TRANSPORT) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError("通信に失敗しました", kind=ERROR_TRANSPORT) from exc
+
+        _raise_for_status(response)
 
     def download_result(self, result_ref: str) -> DownloadedResult:
         settings = get_settings()

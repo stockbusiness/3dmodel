@@ -51,11 +51,11 @@ def test_verified_preset_is_bounded(adapter):
     assert estimate.max_micro_usd == 300_000
 
 
-@pytest.mark.parametrize("adapter", [TripoAdapter(), MeshyAdapter()])
-def test_cancel_is_unsupported(adapter):
-    """公式APIで取消を確認できていないため未対応（仕様第8章）。"""
+def test_tripo_cancel_is_unsupported():
+    """Tripoは公式SDKに取消が無いため未対応（仕様第8章）。"""
     from app.providers.base import UnsupportedOperation
 
+    adapter = TripoAdapter()
     assert adapter.supports_cancel is False
     with pytest.raises(UnsupportedOperation):
         adapter.cancel("task-1")
@@ -238,6 +238,30 @@ def test_meshy_error_body_is_not_returned_to_the_screen(settings_env, monkeypatc
     with pytest.raises(ProviderError) as excinfo:
         MeshyAdapter().fetch_status("task-1")
     assert secret not in str(excinfo.value)
+
+
+def test_meshy_cancel_calls_the_documented_delete(settings_env, monkeypatch):
+    """取消は DELETE /image-to-3d/{id}（公式資料で確認済み）。"""
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"result": "task-1"})
+
+    _meshy_client(monkeypatch, handler)
+    adapter = MeshyAdapter()
+    assert adapter.supports_cancel is True
+    adapter.cancel("task-1")
+    assert seen["method"] == "DELETE"
+    assert seen["path"].endswith("/image-to-3d/task-1")
+
+
+def test_meshy_cancel_of_a_finished_task_is_reported_as_not_cancelled(settings_env, monkeypatch):
+    """終了済みのタスクは取り消せない。未取消として扱えるよう例外にする（仕様第8章）。"""
+    _meshy_client(monkeypatch, lambda request: httpx.Response(400, json={"message": "x"}))
+    with pytest.raises(ProviderError):
+        MeshyAdapter().cancel("task-1")
 
 
 def test_meshy_download_is_blocked_without_allowed_hosts(settings_env):

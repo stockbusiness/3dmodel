@@ -25,7 +25,15 @@
 | Tripo | 公式Python SDK `tripo3d` 0.4.2（MIT） | PyPI sdist | sha256 `ded61fde78a830e971c95e3cd10ee68e2b0c3339202094b38fd6d46bc266a7b5`。GitHub `VAST-AI-Research/tripo-python-sdk` のタグ `v0.4.2` の存在も確認 |
 | Meshy | 公式CLI `meshy-cli` 0.2.0（MIT、`meshy-dev` 配布） | npm tarball | sha1 `748e495d5d2e0550a1182cba67f90f51a231742a`／sha256 `764f372181709c7f81e0f3fe5631ceb379527d25b9ade60ed514a79dac2d55ca` |
 
-**価格ページは読めていない。** したがって価格は未確認のままである。
+**価格ページと公式APIドキュメントはこの環境からは読めていない。**
+そのため、以下は**利用者が自分の環境で開いて内容を提示したもの**を根拠にしている。
+出所を明記して区別する。
+
+| 根拠 | 提示された内容 | 提示日 | 記録先 |
+| --- | --- | --- | --- |
+| `https://developers.tripo3d.ai/en/pricing`（画面） | クレジット単価、Image to 3D のクレジット数、加算オプション | 2026-09-08 | 第1.4節 |
+| `https://docs.meshy.ai/api/pricing`（本文） | Image to 3D のクレジット数 | 2026-09-08 | 第2.4節 |
+| `https://docs.meshy.ai/llms-full.txt`（公式のドキュメント一括配布） | 取消の意味と課金、レート制限、成果物の保持期間と配信ホスト、失敗時のクレジット、Taskの項目 | 2026-09-08 | 第2.2節・第2.6節 |
 
 ---
 
@@ -170,10 +178,14 @@ HDテクスチャ+10、HD形状+20）と一致することを確認した。
 | 作成 | `POST /image-to-3d` → `{"result": "<task_id>"}` |
 | 状態取得 | `GET /image-to-3d/{task_id}` → Task |
 | 一覧 | `GET /image-to-3d?page_num=&page_size=&sort_by=` |
-| 削除 | `DELETE /image-to-3d/{task_id}` |
+| 取消 | `DELETE /image-to-3d/{task_id}`（**実行中タスクの取消**。第2.2.1節） |
 | 状態値 | `PENDING` / `IN_PROGRESS` / `SUCCEEDED` / `FAILED` / `CANCELED` |
 | Taskの項目 | `id`, `type`, `status`, `progress`, `preceding_tasks`, `created_at`, `started_at`, `finished_at`, `expires_at`, `task_error.message`, `model_urls`（形式→URLの対応。GLBは `model_urls.glb`）, `texture_urls[]`, `thumbnail_url`, `image_urls[]` |
 | エラーの分類 | 400/422 = 内容不正、401 = 認証、402 = 残高不足、404 = 見つからない、429 = レート制限、その他 = サーバー |
+| エラーの詳細 | `task_error.{type, code, message, doc_url}` |
+| 時刻の形式 | ミリ秒のエポック整数（`created_at` / `started_at` / `finished_at` / `expires_at`） |
+| 消費クレジット | `consumed_credits`。**`FAILED` のタスクでは 0 になる**（失敗分は自動返却される） |
+| ブラウザからの直接呼び出し | CORSで拒否される。サーバー経由でのみ呼ぶ（こちらの実装はサーバー経由） |
 
 `POST /image-to-3d` の本文（公式CLIが送る項目そのまま）：
 
@@ -184,6 +196,36 @@ HDテクスチャ+10、HD形状+20）と一致することを確認した。
 `enable_pbr`、`texture_prompt`（600文字まで）、`texture_resolution`（`2k` / `4k` / `8k`）、
 `pose_mode`（`a-pose` / `t-pose`）、`image_enhancement`、`remove_lighting`、`target_formats`
 
+#### 2.2.1 取消（U-9 解消・2026-09-08）
+
+`DELETE /image-to-3d/{task_id}` は**実行中の依頼を取り消す操作**である（記録の削除ではない）。
+課金の扱いは状態によって異なる。
+
+| 取消時の状態 | 結果 | 作成時クレジット |
+| --- | --- | --- |
+| `PENDING` | 取消される | **返却される** |
+| `IN_PROGRESS` | 取消される | **返却されない** |
+| `SUCCEEDED` / `FAILED` / `CANCELED`（終了済み） | 取り消せない | — |
+
+**実装：`MeshyAdapter.supports_cancel = True` にし、`cancel()` を実装した。**
+ただし、こちらからは「取消の瞬間に PENDING だったか IN_PROGRESS だったか」を確実には
+判定できないため、**取消しても送信枠は返却せず保持する**（仕様第8章の状態遷移表の
+「送信後の取消は枠を保持」に従う。返却される場合はこちらが損をしない側に倒れる）。
+終了済みで取り消せなかった場合は「未取消」として状態と費用の照合を続ける。
+
+#### 2.2.2 レート制限（U-8 の Meshy 分・2026-09-08）
+
+| プラン | 1秒あたりの要求数 | 同時に待たせられるタスク数 |
+| --- | --- | --- |
+| Pro | 20 | 10 |
+| Premium | 20 | 30 |
+| Ultra | 20 | 100 |
+| Studio | 20 | 20 |
+| Enterprise | 100 | 50以上 |
+
+こちらの同時外部タスク上限は**全体2件・各社1件**なので、最も低い Pro でも十分に下回る。
+状態確認の間隔（既定10秒）も 20 req/s に対して余裕がある。
+
 ### 2.3 実装で決めたこと
 
 - **画像は `data:` URI で送る。** 公式CLIもローカルファイルを `data:` URI として送っている。
@@ -191,9 +233,9 @@ HDテクスチャ+10、HD形状+20）と一致することを確認した。
   送信用コピー（EXIF方向を正規化し位置情報を除いたもの）を base64 にして載せる。
 - **自動リトライは無い。** 公式CLIのクライアントは `fetch` を1回行うだけで、
   `AbortController` によるタイムアウトのみを持つ。こちらも1回だけ送る。
-- **取消は未対応。** `DELETE` は用意されているが、
-  **実行中のタスクを取り消す操作なのか、記録を消すだけなのかを公式資料で確認できていない。**
-  課金の扱いも不明なため `cancel()` は `unsupported` を返す。
+- **取消に対応する（2026-09-08 変更）。** `DELETE /image-to-3d/{id}` が実行中タスクの
+  取消であることを公式資料で確認したため `supports_cancel = True` にした。
+  返却の有無はこちらから判定できないため、**送信枠は返さず保持する**（第2.2.1節）。
 - **ダウンロードは `download_guard` を通す。** `model_urls.glb` のURLを検査してから取得する。
 
 ### 2.4 価格（2026-09-08 一部確認）
@@ -239,6 +281,29 @@ Meshy-6 と Meshy-7 はどちらも「テクスチャあり 30 credits」で同�
 教室での品質検証にはテクスチャ付きが必要なため true にした。
 **この設定は課金が増える側の選択**である（`docs/decisions.md` A-28）。
 
+### 2.6 データの取扱い（2026-09-08 一部確認）
+
+`https://docs.meshy.ai/llms-full.txt` の内容を利用者が提示した。
+
+| 項目 | 確認できた内容 | 状態 |
+| --- | --- | --- |
+| 生成物の保持期間 | **APIで生成したモデルは最大3日間しか保持されない**（Enterprise以外）。Enterprise 契約では無期限保持が可能 | 確認済み |
+| 成果物のURL | `https://assets.meshy.ai/...` の**署名付き・期限付きURL**。有効期限は Task の `expires_at`（= `finished_at` の3日後） | 確認済み |
+| 送信した画像の保持期間 | 記載を確認できていない | **未確認（U-4a に残る）** |
+| 学習利用の可否・opt-out | APIドキュメントには記載が無い。規約側の確認が要る | **未確認（U-4b）** |
+| 生成物の利用条件 | 同上 | **未確認（U-4c）** |
+
+**運用への影響：3日で消える。**
+生成後3日を過ぎるとダウンロードできなくなるため、
+検証で使う成果物は**受領後すみやかにこちら側へ保存する**必要がある。
+現在の実装は成功を検知した巡回でそのままダウンロードして保存するので、
+通常運転ではこの制限に当たらない。ただし
+「保存だけ再試行」を使う場合は `expires_at` を過ぎていないことを確認する。
+
+**配信ホスト（U-7 の Meshy 分）：`assets.meshy.ai`。**
+`APP_MESHY_DOWNLOAD_HOSTS=assets.meshy.ai` を `.env.example` の記載例に入れた。
+実際の設定は運用時に行う（既定は空のままで、空のあいだは何もダウンロードしない）。
+
 ---
 
 ## 3. 未確認の項目（`UNVERIFIED`）
@@ -250,12 +315,12 @@ Meshy-6 と Meshy-7 はどちらも「テクスチャあり 30 credits」で同�
 | ~~U-3a~~ | ~~Tripo：画像→3Dの1件あたりのクレジット数、オプションの加算、1クレジットのUSD単価~~ → **確認済み（2026-09-08）**：30 credits／$0.01 per credit ＝ **$0.30/件**。第1.4節を参照 | `https://developers.tripo3d.ai/en/pricing` | 解消 |
 | U-12 | Tripo：価格表の「H Series / P Series / Splat Series」のうち、`model_version = v2.5-20250123` がどれに当たるか。確認した 30 credits は H Series タブの値 | 価格ページの他タブ、または各シリーズの対象モデル一覧 | 3シリーズで Image to 3D の価格が同じなら影響しない。異なる場合は見積額の見直しが要る |
 | U-3b | Meshy：**クレジットのUSD単価**。クレジット数（30 credits/件）は確認済み（第2.4節）だが、価格ページには購入単価が載っていない | `https://www.meshy.ai/settings/subscription` の購入画面、または Meshy の料金ページ | 上限額を見積もれないため実行不可。**Tripoと同じ単価を仮定しない**（仕様第11章） |
-| U-4a | 両社：送信した画像と生成物の保持期間 | 各社の規約 | 生徒作品を送る判断に必要 |
+| U-4a | 両社：送信した画像と生成物の保持期間。**Meshy の生成物は確認済み（最大3日・第2.6節）**。残るのは「Meshy へ送信した画像の保持期間」と「Tripo の画像・生成物の保持期間」 | 各社の規約 | 生徒作品を送る判断に必要 |
 | U-4b | 両社：学習利用の可否と opt-out の手段 | 各社の規約 | 同上 |
 | U-4c | 両社：生成物の利用条件（授業・販促での使用可否） | 各社の規約 | 教室採用の判断に必要 |
-| U-7 | 両社：成果物を配信するホスト名 | 実物のURL、または公式資料 | `APP_TRIPO_DOWNLOAD_HOSTS` / `APP_MESHY_DOWNLOAD_HOSTS` が空のあいだはダウンロードしない |
-| U-8 | 両社：レート制限の具体的な数値 | 公式資料 | 同時外部タスク上限（全体2・各社1）を実際の上限以下に保てているかを確認できない |
-| U-9 | Meshy：`DELETE /image-to-3d/{id}` が実行中タスクの取消になるか、課金はどうなるか | `https://docs.meshy.ai/en/api/image-to-3d` | 取消を未対応のままにしている |
+| U-7 | 両社：成果物を配信するホスト名。**Meshy は確認済み：`assets.meshy.ai`（第2.6節）**。Tripo は未確認 | 実物のURL、または公式資料 | `APP_TRIPO_DOWNLOAD_HOSTS` が空のあいだは Tripo の成果物をダウンロードしない |
+| U-8 | 両社：レート制限の具体的な数値。**Meshy は確認済み（第2.2.2節。最も低いプランでも 20 req/s・同時10件）**。Tripo は未確認 | 公式資料 | Meshy 側は上限を十分下回ることを確認済み。Tripo 側は未確認 |
+| ~~U-9~~ | ~~Meshy：`DELETE /image-to-3d/{id}` が実行中タスクの取消になるか、課金はどうなるか~~ → **確認済み（2026-09-08）**：実行中タスクの取消。`PENDING` は返却、`IN_PROGRESS` は返却なし、終了済みは取消不可。第2.2.1節を参照 | `https://docs.meshy.ai/llms-full.txt` | 解消（`supports_cancel = True` にした。枠は保持する） |
 | U-10 | Tripo：`model_version` をより新しい版（`v3.1-20260211` 等）にすべきか。品質と価格の差 | 公式資料 | 既定の `v2.5-20250123` を採用中 |
 | U-11 | Tripo：送信時の `{"type": "jpg"}` 固定申告が、PNG/WebP入力の結果に影響するか | 公式資料 | 影響があれば送信用コピーをJPEGに揃える必要がある |
 
@@ -265,5 +330,6 @@ Meshy-6 と Meshy-7 はどちらも「テクスチャあり 30 credits」で同�
 2. `app/services/presets.py` の `price_max_micro_usd`・`price_version`・`price_checked_on`・
    `price_source_url` を埋め、`is_unverified=False`・`is_enabled=True` にする
 3. `.env` の `APP_TRIPO_DOWNLOAD_HOSTS` / `APP_MESHY_DOWNLOAD_HOSTS` に配信ホストを設定する
+   （Meshy は `assets.meshy.ai`。Tripo は実物のURLで確かめる）
 4. セット上限額と全体上限額（`APP_GLOBAL_COST_CAP_USD`）を設定する
 5. そのうえで A3.5（早期実感触、5題材×2社＝10件）に進む
