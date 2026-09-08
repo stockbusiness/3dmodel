@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ experiment.name }}｜3Dアート品質検証{% endblock %}
+{% block content %}
+<h1>{{ experiment.name }}
+  {% if experiment.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}
+</h1>
+<p class="footnote">{{ experiment.purpose_note }}</p>
+
+<div class="panel">
+  <h3 style="margin-top:0">集計</h3>
+  <dl class="kv">
+    <dt>生成件数</dt><dd>{{ summary.generations_total }}</dd>
+    <dt>処理中</dt><dd>{{ summary.in_progress }}</dd>
+    <dt>技術失敗</dt><dd>{{ summary.failed_technical }}</dd>
+    <dt>評価待ち（未評価）</dt><dd>{{ summary.unreviewed }}</dd>
+    <dt>評価済み</dt><dd>{{ summary.reviewed }}</dd>
+    <dt>教室利用合格</dt><dd>{{ summary.passed }}{% if summary.is_provisional %}<span class="footnote">（未評価が残るため暫定）</span>{% endif %}</dd>
+    <dt>見積累計</dt><dd>{{ summary.estimate_micro_usd | usd }}</dd>
+    <dt>手動確認済み実績</dt><dd>{{ summary.confirmed_micro_usd | usd }}</dd>
+    <dt>失敗・要照合</dt><dd>{{ summary.unreconciled_micro_usd | usd }}</dd>
+    <dt>上限額</dt><dd>{{ experiment.cost_cap_micro_usd | usd }}</dd>
+    <dt>合格1件あたり費用</dt><dd>{{ summary.cost_per_passed_micro_usd | usd }}</dd>
+    <dt>講師作業時間</dt><dd>{{ summary.work_seconds }} 秒</dd>
+  </dl>
+  <p><a class="button secondary" href="/api/experiments/{{ experiment.id }}/export.csv">CSVを出力する</a></p>
+  <p class="footnote">
+    上限額の判定・送信枠・判定表は A2／A4 で実装します。現在の数値はモックによるもので、品質実績ではありません。
+  </p>
+</div>
+
+<h2>題材</h2>
+{% if not assets %}
+  <div class="panel"><p>題材はまだありません。下のフォームから画像を登録してください。</p></div>
+{% else %}
+<div class="panel table-scroll">
+  <table>
+    <thead>
+      <tr><th>題材名</th><th>題材タグ</th><th>出所分類</th><th>利用同意</th><th>画像</th><th>生成</th></tr>
+    </thead>
+    <tbody>
+    {% for row in assets %}
+      <tr>
+        <td><a href="/assets/{{ row.asset.id }}">{{ row.asset.title or "（無題）" }}</a></td>
+        <td>{{ subject_tags.get(row.asset.subject_tag, row.asset.subject_tag) }}</td>
+        <td>{{ source_classes.get(row.asset.source_class, row.asset.source_class) }}</td>
+        <td>
+          {% if row.asset.consent_status == "missing" %}
+            <span class="badge warn">未取得</span>
+          {% else %}
+            <span class="badge ok">{{ consent_statuses.get(row.asset.consent_status) }}</span>
+          {% endif %}
+        </td>
+        <td>{{ row.variant_count }}</td>
+        <td>{{ row.generation_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2>画像を登録する</h2>
+<div class="panel">
+  <form method="post" action="/experiments/{{ experiment.id }}/assets" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label for="title">題材名</label>
+    <input id="title" name="title" type="text" maxlength="200">
+
+    <label for="file">原画像<span class="hint">PNG・JPEG・WebP、10MiB・20メガピクセルまで。EXIFの位置情報は保存時に除去します。</span></label>
+    <input id="file" name="file" type="file" accept="image/png,image/jpeg,image/webp" required>
+
+    <label for="subject_tag">題材タグ</label>
+    <select id="subject_tag" name="subject_tag" required>
+      {% for value, label in subject_tags.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+
+    <label for="source_class">出所分類</label>
+    <select id="source_class" name="source_class" required>
+      {% for value, label in source_classes.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+
+    <label for="consent_status">利用同意<span class="hint">「未取得」の画像は外部送信できません（サーバー側でも拒否します）。</span></label>
+    <select id="consent_status" name="consent_status" required>
+      {% for value, label in consent_statuses.items() %}<option value="{{ value }}"{% if value == "not_required" %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+
+    <label for="consent_obtained_on">同意取得日<span class="hint">「同意あり」の場合に入力します。</span></label>
+    <input id="consent_obtained_on" name="consent_obtained_on" type="date">
+
+    <label for="consent_scope_note">同意の範囲メモ</label>
+    <textarea id="consent_scope_note" name="consent_scope_note"></textarea>
+
+    <p><button type="submit">登録する</button></p>
+  </form>
+</div>
+{% endblock %}

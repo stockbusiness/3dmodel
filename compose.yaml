@@ -1,0 +1,43 @@
+# 仕様第3章：web と worker を別プロセスにし、共通の data ボリュームを使う。
+# ローカル開発では 127.0.0.1 にのみ公開する（仕様第12章）。
+# 限定公開（VPS＋Caddy）は deploy/ の上書きファイルを重ねて使う。
+
+services:
+  web:
+    build: .
+    image: art3d-validation:local
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY を .env に設定してください}
+      APP_DATA_DIR: /srv/data
+      APP_LIVE_API_ENABLED: ${APP_LIVE_API_ENABLED:-false}
+      APP_GLOBAL_COST_CAP_USD: ${APP_GLOBAL_COST_CAP_USD:-}
+      APP_CALIBRATION_TARGET_COUNT: ${APP_CALIBRATION_TARGET_COUNT:-0}
+      APP_SESSION_TTL_HOURS: ${APP_SESSION_TTL_HOURS:-12}
+    volumes:
+      - data:/srv/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build: .
+    image: art3d-validation:local
+    command: ["python", "-m", "app.worker"]
+    environment:
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY を .env に設定してください}
+      APP_DATA_DIR: /srv/data
+      APP_LIVE_API_ENABLED: ${APP_LIVE_API_ENABLED:-false}
+    volumes:
+      - data:/srv/data
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  data:

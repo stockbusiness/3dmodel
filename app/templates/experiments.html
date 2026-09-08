@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}検証セット一覧｜3Dアート品質検証{% endblock %}
+{% block content %}
+<h1>検証セット一覧</h1>
+
+{% if not experiments %}
+  <div class="panel"><p>検証セットはまだありません。下のフォームから作成してください。</p></div>
+{% else %}
+<div class="panel table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>セット名</th><th>実/モック</th><th>集計区分</th><th>題材数</th>
+        <th>処理中</th><th>未評価</th><th>合格</th><th>見積累計／上限額</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in experiments %}
+      <tr>
+        <td><a href="/experiments/{{ row.experiment.id }}">{{ row.experiment.name }}</a></td>
+        <td>{% if row.experiment.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}</td>
+        <td>{{ "早期確認" if row.experiment.track == "early_check" else "通常検証" }}</td>
+        <td>{{ row.asset_count }}</td>
+        <td>{{ row.summary.in_progress }}</td>
+        <td>{{ row.summary.unreviewed }}</td>
+        <td>{{ row.summary.passed }}{% if row.summary.is_provisional %}<span class="footnote">（暫定）</span>{% endif %}</td>
+        <td>{{ row.summary.estimate_micro_usd | usd }} ／ {{ row.experiment.cost_cap_micro_usd | usd }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<h2>検証セットを作る</h2>
+<div class="panel">
+  <form method="post" action="/experiments">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="name">名称</label>
+    <input id="name" name="name" type="text" required maxlength="200">
+
+    <label for="purpose_note">目的</label>
+    <textarea id="purpose_note" name="purpose_note" placeholder="例：教室の既存作品が3D化に耐えるかを確認する"></textarea>
+
+    <label for="cost_cap_usd">上限額（USD）<span class="hint">実API生成を行う場合は必須です。モック検証では空欄で構いません。</span></label>
+    <input id="cost_cap_usd" name="cost_cap_usd" type="number" min="0" step="1" inputmode="numeric">
+
+    <label for="reference_rate">参考換算レート（1USDあたりの円）<span class="hint">利用者が指定する参考値です。現在レートではありません。</span></label>
+    <input id="reference_rate" name="reference_rate" type="number" min="1" step="1" inputmode="numeric">
+
+    <label for="hourly_wage">想定時給（円）</label>
+    <input id="hourly_wage" name="hourly_wage" type="number" min="0" step="1" inputmode="numeric">
+
+    <div class="notice warn">
+      現在の版はモック専用です。実API生成は A3 以降に有効化します
+      （<span class="mono">LIVE_API_ENABLED=false</span>）。
+    </div>
+
+    <p><button type="submit">作成する</button></p>
+  </form>
+</div>
+{% endblock %}
