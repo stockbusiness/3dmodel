@@ -99,14 +99,57 @@ SDK 0.4.2 に取消のメソッドは無い。`cancel()` は `unsupported` を�
 `_image_to_file_content` は実際の形式によらず `{"type": "jpg"}` を送る実装になっている。
 こちらの送信用コピーはPNG/JPEG/WebPのいずれかなので、この申告が結果に影響するかは未確認。
 
-### 1.4 採用したプリセット
+### 1.4 価格（2026-09-08 確認）
+
+`https://developers.tripo3d.ai/en/pricing` の表示を利用者が確認した。
+
+| 項目 | 値 |
+| --- | --- |
+| クレジット単価 | **1 credit = $0.01 USD**（従量制。100 credits = $1.00 USD） |
+| Image to 3D（テクスチャなし） | 20 credits |
+| **Image to 3D（標準テクスチャ）** | **30 credits** |
+
+追加料金（基本クレジットに加算）：
+
+| 追加 | クレジット |
+| --- | --- |
+| HD Texture | +10 |
+| 8K Ultra Texture | +20 |
+| HD Geometry Quality | +20 |
+| Quad Mesh | +5 |
+| Smart Low-poly | +10 |
+| Generate Parts | +20 |
+
+仕様第11章の2026-09-08時点の参照値（標準テクスチャ付き30credits、1credit=$0.01、
+HDテクスチャ+10、HD形状+20）と一致することを確認した。
+
+**採用プリセット `tripo-standard` の1件あたりの上限見積：**
+
+`texture=true` かつ `texture_quality=standard`、`geometry_quality=standard` で、
+`quad` / `smart_low_poly` / `generate_parts` はいずれも無効のため、
+**追加料金は発生しない**。
+
+```
+30 credits × $0.01 = $0.30 /件 = 300,000 micro-USD
+```
+
+このプリセットでは追加料金の発生しうる項目を選べないため、この額が
+そのまま上限側の見積になる（仕様第11章「見積は常に上限側を採る」）。
+
+**残っている確認事項（U-12）**：価格表は「H Series / P Series / Splat Series」の
+タブで分かれている。上の数値は **H Series** タブの表示である。
+採用している `model_version = v2.5-20250123` がどのシリーズに属するかを
+確認できていない。3つのシリーズで Image to 3D の価格が同じであれば影響しない。
+
+### 1.5 採用したプリセット
 
 | 項目 | 値 |
 | --- | --- |
 | code | `tripo-standard` |
 | model_id | `v2.5-20250123`（SDKの既定値。より新しい版を選ぶかは価格と品質の確認後に判断する） |
 | settings | `model_version=v2.5-20250123, texture=true, pbr=true, texture_quality=standard, geometry_quality=standard, texture_alignment=original_image, export_uv=true` |
-| 有効 | **無効**（価格未確認のため） |
+| 1件あたりの上限見積 | **$0.30（300,000 micro-USD）** |
+| 有効 | **無効**（`model_version` のシリーズ対応とデータ取扱い条件が未確認のため） |
 
 ---
 
@@ -174,7 +217,8 @@ SDK 0.4.2 に取消のメソッドは無い。`cancel()` は `unsupported` を�
 
 | ID | 内容 | 確認先 | 影響 |
 | --- | --- | --- | --- |
-| U-3a | Tripo：画像→3Dの1件あたりのクレジット数、オプション（HDテクスチャ・HD形状等）の加算、1クレジットのUSD単価 | `https://developers.tripo3d.ai/en/pricing` | 上限額を見積もれないため実行不可（仕様第11章） |
+| ~~U-3a~~ | ~~Tripo：画像→3Dの1件あたりのクレジット数、オプションの加算、1クレジットのUSD単価~~ → **確認済み（2026-09-08）**：30 credits／$0.01 per credit ＝ **$0.30/件**。第1.4節を参照 | `https://developers.tripo3d.ai/en/pricing` | 解消 |
+| U-12 | Tripo：価格表の「H Series / P Series / Splat Series」のうち、`model_version = v2.5-20250123` がどれに当たるか。確認した 30 credits は H Series タブの値 | 価格ページの他タブ、または各シリーズの対象モデル一覧 | 3シリーズで Image to 3D の価格が同じなら影響しない。異なる場合は見積額の見直しが要る |
 | U-3b | Meshy：画像→3Dの1件あたりのクレジット数、`ultra_mode` / `should_texture` / テクスチャ解像度による差、クレジットのUSD単価 | `https://docs.meshy.ai/en/api/pricing` | 同上。**Tripoと同じ単価を仮定しない** |
 | U-4a | 両社：送信した画像と生成物の保持期間 | 各社の規約 | 生徒作品を送る判断に必要 |
 | U-4b | 両社：学習利用の可否と opt-out の手段 | 各社の規約 | 同上 |
