@@ -18,7 +18,11 @@ from sqlalchemy import select
 from app.auth import hash_password
 from app.db import session_scope
 from app.models import Operator
-from app.services.presets import refresh_placeholder_presets, seed_presets
+from app.services.presets import (
+    apply_confirmed_prices,
+    refresh_placeholder_presets,
+    seed_presets,
+)
 
 MIN_PASSWORD_LENGTH = 12
 
@@ -39,9 +43,10 @@ def init_db() -> None:
     with session_scope() as db:
         created = seed_presets(db)
         updated = refresh_placeholder_presets(db)
+        priced = apply_confirmed_prices(db)
     print(
         f"DBを最新まで移行しました。プリセットを {created} 件追加し、"
-        f"{updated} 件を確認済みの内容に更新しました。"
+        f"{updated} 件を確認済みの内容に更新し、{priced} 件に確認済みの価格を入れました。"
     )
 
 
@@ -105,7 +110,11 @@ def main() -> None:
         with session_scope() as db:
             created = seed_presets(db)
             updated = refresh_placeholder_presets(db)
-        print(f"プリセットを {created} 件追加し、{updated} 件を更新しました。")
+            priced = apply_confirmed_prices(db)
+        print(
+            f"プリセットを {created} 件追加し、{updated} 件を更新し、"
+            f"{priced} 件に確認済みの価格を入れました。"
+        )
 
 
 if __name__ == "__main__":

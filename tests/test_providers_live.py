@@ -337,8 +337,11 @@ def test_external_uri_glb_from_a_real_adapter_is_rejected(operator, monkeypatch)
         assert db.scalar(select(Artifact).where(Artifact.generation_id == generation_id)) is None
 
 
-def test_unverified_presets_cannot_be_used_for_live_generation(operator):
-    """価格未確認のプリセットは実生成に選べない（仕様第6.3章・第11章）。"""
+def test_real_presets_cannot_be_used_for_live_generation(operator):
+    """データ取扱い条件が未確認のあいだ、実生成に選べない（仕様第6.3章・第11章）。
+
+    価格は確認済みになったが、それだけでは選べるようにしない。
+    """
     from sqlalchemy import select
 
     from app.db import session_scope
@@ -353,11 +356,56 @@ def test_unverified_presets_cannot_be_used_for_live_generation(operator):
         op = db.scalars(select(Operator)).first()
         for code in ("tripo-standard", "meshy-standard"):
             preset = db.scalar(select(Preset).where(Preset.code == code))
-            assert preset.is_unverified is True
             assert preset.is_enabled is False
             with pytest.raises(GenerationRejected) as excinfo:
                 create_generation(db, operator=op, variant_id=variant_id, preset_id=preset.id)
             assert "未確認" in str(excinfo.value) or "無効" in str(excinfo.value)
+
+
+def test_confirmed_prices_are_stored_as_integers(db_ready):
+    """価格は micro-USD の整数で持つ。上限側を採る（仕様第11章）。"""
+    from sqlalchemy import select
+
+    from app.db import session_scope
+    from app.models import Preset
+
+    with session_scope() as db:
+        tripo = db.scalar(select(Preset).where(Preset.code == "tripo-standard"))
+        meshy = db.scalar(select(Preset).where(Preset.code == "meshy-standard"))
+
+        # Tripo: 30credits x $0.01 = $0.30
+        assert tripo.price_max_micro_usd == 300_000
+        assert tripo.price_checked_on == "2026-09-08"
+
+        # Meshy: 30credits x $0.04（最も高い購入経路＝追加クレジットパック $10/250）= $1.20
+        assert meshy.price_max_micro_usd == 1_200_000
+        assert meshy.price_checked_on == "2026-09-08"
+
+        for preset in (tripo, meshy):
+            assert isinstance(preset.price_max_micro_usd, int)
+            assert preset.is_unverified is False
+            # 価格が確認できても、データ取扱い条件が未確認のあいだは有効にしない
+            assert preset.is_enabled is False
+
+
+def test_confirmed_price_is_not_overwritten(db_ready):
+    """運営が入れた価格を、確認済みの既定値で勝手に上書きしない。"""
+    from sqlalchemy import select
+
+    from app.db import session_scope
+    from app.models import Preset
+    from app.services.presets import apply_confirmed_prices
+
+    with session_scope() as db:
+        preset = db.scalar(select(Preset).where(Preset.code == "meshy-standard"))
+        preset.price_max_micro_usd = 999_000
+        preset.price_version = "operator"
+
+    with session_scope() as db:
+        assert apply_confirmed_prices(db) == 0
+        preset = db.scalar(select(Preset).where(Preset.code == "meshy-standard"))
+        assert preset.price_max_micro_usd == 999_000
+        assert preset.price_version == "operator"
 
 
 # --- 公式SDKを実際に通す結合試験（外部へは接続しない） -----------------------

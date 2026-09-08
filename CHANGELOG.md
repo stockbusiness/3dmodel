@@ -17,11 +17,23 @@
   （こちらの上限は全体2件・各社1件なので十分下回る）
 - **Meshy の成果物**：`assets.meshy.ai` の署名付きURL。**保持は最大3日**
 - **Meshy の失敗時のクレジット**：`FAILED` のタスクは `consumed_credits` が 0（自動返却）
-- **Meshy のプラン価格（JPY建て）**：Pro ¥3,084/月＝1,000クレジット、
-  Premium ¥6,168/月＝3,000、Ultra ¥15,420/月＝8,000、Free ¥0＝100。
-  **USD表示は未取得のため、見積額はまだ設定しない**
+- **Meshy のプラン価格（USD）**：Pro $20/月＝1,000クレジット、Premium $40/月＝3,000、
+  Ultra $100/月＝8,000、Free $0＝100
+- **Meshy の追加クレジットパック**：$10/250、$32/1,000、$84/3,000（＝ $0.04〜$0.028/credit）
 - **Meshy の生成物のライセンス**：Free は **CC BY 4.0**（クレジット表記で商用利用可）、
-  Pro以上は「プライベートライセンス」（全文は未取得）
+  Pro以上は Private license for all assets（条文そのものは未取得）
+
+### 変更（価格の反映）
+
+- **`tripo-standard` に $0.30/件（300,000 micro-USD）を設定**
+- **`meshy-standard` に $1.20/件（1,200,000 micro-USD）を設定**。
+  単価は購入経路で変わるため、確認できた中で最も高い経路
+  （追加クレジットパック $10/250credits ＝ $0.04/credit）を採った。
+  仕様第11章「見積は常に上限側を採る」に従う（`docs/decisions.md` A-38）
+- 両プリセットの `is_unverified` を False にした。
+  **`is_enabled` は False のまま**（データ取扱い条件が未確認のため。A-39）
+- `apply_confirmed_prices()` を追加し、`init-db` / `seed-presets` から呼ぶようにした。
+  既に価格が入っている行は書き換えない
 
 ### 変更
 
