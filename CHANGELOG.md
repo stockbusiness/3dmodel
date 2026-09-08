@@ -69,6 +69,17 @@
   料金は USD 建ての**税別**（U-14 解消）
 - 第1.1条：**14歳以上**（Tripo は13歳以上）
 
+### 「学習利用」の文言の突き合わせ
+
+- **両社とも「学習利用」を定義していない。** 動詞は同じ4つ
+  （train / validate / test / improve）だが、**目的語と限定句が違う**
+- Meshy 第2.9条の目的語は `Services`、限定句なし → **AIモデルの学習に限らない**と読める
+- Tripo 第5.2.2条は `as training data` で `any AI Technology` に限定 →
+  **不使用の約束は明確だが範囲は狭い**（役務提供のための利用・表示は別途許諾済み）
+- Meshy 第2.8条（Aggregated Statistics）は「improve our models」を含むが、
+  **Customer Input / Output は含まないと明記**されており第2.9条とは別の話
+- 具体的な範囲は条文から読み取れないため U-22 として照会対象にした
+
 ### 記録
 
 - `docs/provider-contracts.md` 第0節・第1.6節・第2.2.1節・第2.2.2節・第2.4.1〜2.4.4節・
