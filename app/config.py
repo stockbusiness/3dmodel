@@ -58,6 +58,21 @@ class Settings(BaseSettings):
     # Tripo公式SDKの版を固定する（docs/provider-contracts.md）
     tripo_sdk_version: str = "0.4.2"
 
+    # 判定表の閾値（仕様第10章）。初期値は仮置きであり、達成保証ではない
+    verdict_min_samples: int = 5
+    verdict_adopt_within_two_percent: int = 90
+    verdict_adopt_first_percent: int = 70
+    verdict_hold_within_two_percent: int = 70
+    verdict_unsuitable_defect_percent: int = 50
+
+    # 授業投入時の仮目標（仕様第10章）。実測値ではない
+    target_first_pass_percent: int = 90
+    target_within_two_pass_percent: int = 95
+    target_work_seconds: int = 300
+
+    # 一覧のポーリング間隔（仕様第6.4章：一覧は15〜30秒程度）
+    list_poll_seconds: int = 20
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "app.db"

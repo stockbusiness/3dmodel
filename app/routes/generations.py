@@ -20,13 +20,14 @@ from app.models import (
     AssetVariant,
     Comparison,
     CostEntry,
+    Experiment,
     Generation,
     Operator,
     Review,
     utcnow,
 )
 from app.models.enums import DEFECT_TAGS, PURPOSES, VERDICTS
-from app.services import audit, cost_guard, idempotency, quota
+from app.services import audit, blind, calibration, cost_guard, idempotency, quota
 from app.services import generation as generation_service
 from app.services.review_aggregate import defect_tags, is_pass, pass_blockers
 from app.templating import render
@@ -203,6 +204,42 @@ def api_create(
     )
     generation = db.get(Generation, generation_id)
     return {"id": generation_id, "tech_status": generation.tech_status if generation else None}
+
+
+@router.post("/comparisons", dependencies=[Depends(csrf_protect)])
+def create_comparison_from_form(
+    request: Request,
+    variant_id: str = Form(...),
+    preset_a: str = Form(...),
+    preset_b: str = Form(...),
+    purpose: str = Form("benchmark"),
+    idempotency_key: str = Form(...),
+    operator: Operator = Depends(current_operator),
+    db: Session = Depends(db_session),
+):
+    if purpose not in PURPOSES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "目的の値が不正です")
+    body = {"variant_id": variant_id, "preset_ids": [preset_a, preset_b], "purpose": purpose}
+
+    def factory() -> str:
+        comparison, _ = generation_service.create_comparison(
+            db,
+            operator=operator,
+            variant_id=variant_id,
+            preset_ids=[preset_a, preset_b],
+            purpose=purpose,
+        )
+        return comparison.id
+
+    comparison_id, _ = _run_idempotent(
+        db,
+        operator=operator,
+        operation="create_comparison",
+        key=_idempotency_key(request, idempotency_key),
+        body=body,
+        factory=factory,
+    )
+    return RedirectResponse(f"/comparisons/{comparison_id}", status_code=303)
 
 
 @router.post(
@@ -544,25 +581,29 @@ def api_detail(
     ).all()
     latest = reviews[-1] if reviews else None
     snapshot = generation_service.preset_snapshot(generation)
+    # ブラインド中はサービス名・モデルID・プリセット名・外部タスクIDを返さない
+    public = blind.public_generation(db, generation, snapshot)
     return {
         "id": generation.id,
         "tech_status": generation.tech_status,
         "error_kind": generation.error_kind,
         "error_note": generation.error_note,
-        "provider": generation.provider,
+        "blind": public["blind"],
+        "label": public["label"],
+        "provider": public["provider"],
         "is_live": generation.is_live,
         "attempt_index": generation.attempt_index,
         "parent_id": generation.parent_id,
         "comparison_id": generation.comparison_id,
         "consumes_quota": generation.consumes_quota,
         "progress_percent": generation.progress_percent,
-        "provider_task_id": generation.provider_task_id,
+        "provider_task_id": public["provider_task_id"],
         "submitted_at": generation.submitted_at.isoformat() if generation.submitted_at else None,
         "completed_at": generation.completed_at.isoformat() if generation.completed_at else None,
         "last_checked_at": (
             generation.last_checked_at.isoformat() if generation.last_checked_at else None
         ),
-        "preset": {"code": snapshot.get("code"), "model_id": snapshot.get("model_id")},
+        "preset": {"code": public["preset_code"], "model_id": public["model_id"]},
         "artifact": (
             {
                 "id": artifact.id,
@@ -583,6 +624,66 @@ def api_detail(
             if latest
             else None
         ),
+    }
+
+
+@router.post("/api/comparisons/{comparison_id}/reveal", dependencies=[Depends(csrf_protect)])
+def api_reveal_comparison(
+    comparison_id: str,
+    payload: dict,
+    operator: Operator = Depends(current_operator),
+    db: Session = Depends(db_session),
+):
+    """運営による手動開示（評価未確定でも可、監査ログ必須。仕様第7章）。"""
+    comparison = db.get(Comparison, comparison_id)
+    if comparison is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "比較が見つかりません")
+    require_admin_action(operator, "比較の開示")
+    reason = str(payload.get("reason", "")).strip()
+    if not reason:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "開示の理由を入力してください（評価前の開示は結果の見方に影響します）",
+        )
+    blind.reveal(db, comparison, operator=operator, reason=reason, automatic=False)
+    return {"id": comparison.id, "revealed": True}
+
+
+@router.get("/api/comparisons/{comparison_id}")
+def api_comparison(
+    comparison_id: str,
+    operator: Operator = Depends(current_operator),
+    db: Session = Depends(db_session),
+):
+    comparison = db.get(Comparison, comparison_id)
+    if comparison is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "比較が見つかりません")
+    members = db.scalars(
+        select(Generation)
+        .where(Generation.comparison_id == comparison.id)
+        .order_by(Generation.blind_label.asc())
+    ).all()
+    revealed = blind.is_revealed(comparison)
+    return {
+        "id": comparison.id,
+        "is_blind": comparison.is_blind,
+        "revealed": revealed,
+        "revealed_at": comparison.revealed_at.isoformat() if comparison.revealed_at else None,
+        "generations": [
+            {
+                "id": member.id,
+                "label": member.blind_label,
+                "tech_status": member.tech_status,
+                **{
+                    key: value
+                    for key, value in blind.public_generation(
+                        db, member, generation_service.preset_snapshot(member)
+                    ).items()
+                    if key in ("provider", "preset_code", "model_id")
+                },
+            }
+            for member in members
+        ],
     }
 
 
@@ -616,6 +717,12 @@ def _save_review(
         # スマホ未確認は未確認のまま残す（仕様第10章）
         score_mobile = None
 
+    comparison = blind.comparison_of(db, generation)
+    # ブラインド中に行った評価かどうかを記録する。非ブラインドは集計で区別する
+    was_blind = blind.should_hide(comparison)
+    experiment = db.get(Experiment, generation.experiment_id)
+    is_calibration_target = generation.id in set(calibration.target_generation_ids(db, experiment))
+
     previous = db.scalars(
         select(Review)
         .where(Review.generation_id == generation.id, Review.reviewer_id == operator.id)
@@ -636,8 +743,8 @@ def _save_review(
         verdict=verdict,
         comment=comment.strip(),
         work_seconds=max(0, work_seconds),
-        was_blind=False,  # ブラインド評価は A4 で実装する
-        is_calibration=False,
+        was_blind=was_blind,
+        is_calibration=is_calibration_target,
     )
     db.add(review)
     db.flush()
@@ -647,8 +754,15 @@ def _save_review(
         target_kind="generation",
         target_id=generation.id,
         action="review",
-        after={"revision": review.revision, "verdict": verdict},
+        after={
+            "revision": review.revision,
+            "verdict": verdict,
+            "was_blind": was_blind,
+            "is_calibration": is_calibration_target,
+        },
     )
+    # 比較に含まれる全ての結果の評価が確定したら開示する（仕様第6.5章）
+    blind.maybe_reveal_after_review(db, generation)
     return review
 
 
@@ -742,6 +856,9 @@ def detail_page(
     ).all()
     latest = reviews[-1] if reviews else None
     metrics = json.loads(artifact.metrics_json) if artifact and artifact.metrics_json else {}
+    snapshot = generation_service.preset_snapshot(generation)
+    public = blind.public_generation(db, generation, snapshot)
+    comparison = blind.comparison_of(db, generation)
 
     return render(
         request,
@@ -749,11 +866,13 @@ def detail_page(
         {
             "operator": operator,
             "generation": generation,
+            "public": public,
+            "comparison": comparison,
             "asset": asset,
             "variant": variant,
             "artifact": artifact,
             "metrics": metrics,
-            "snapshot": generation_service.preset_snapshot(generation),
+            "snapshot": snapshot,
             "reviews": reviews,
             "latest_review": latest,
             "latest_defect_tags": defect_tags(latest) if latest else [],

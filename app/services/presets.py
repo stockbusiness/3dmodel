@@ -1,8 +1,9 @@
 """固定プリセットの投入（仕様第8章）。
 
-Tripo / Meshy のエンドポイント・モデルID・パラメーター・状態値は
-公式資料で確認済み（2026-09-08、docs/provider-contracts.md）。
-価格とデータ取扱い条件が未確認のため、無効のまま登録する（仕様第4章・第11章）。
+Tripo / Meshy のエンドポイント・モデルID・パラメーター・状態値・**価格**・
+**データ取扱い条件**は公式資料で確認済み（2026-09-08、docs/provider-contracts.md）。
+有料アカウントの契約と、成果物の配信ホスト・公開範囲の確認が済んでいないため、
+**無効のまま**登録する（仕様第4章・第11章）。
 """
 
 from __future__ import annotations
@@ -19,13 +20,44 @@ UNVERIFIED_NOTE = (
     "確認するまで実生成は選択できません。"
 )
 
-# A3時点で残っている未確認事項。価格が確認できるまで実生成は選べない
-PRICE_UNVERIFIED_NOTE = (
-    "エンドポイント・モデルID・パラメーター・状態値・エラーは公式資料で確認済み（2026-09-08）。"
-    "1件あたりの価格（クレジット数とUSD単価）、データ保持期間、学習利用の可否とopt-out手段、"
-    "生成物の利用条件が未確認のため、実生成は選べません。"
-    "詳細は docs/provider-contracts.md を参照。"
+# 価格・データ取扱い条件は確認できた。残るのは契約と運用の前提で、
+# それが整うまで実生成は選べない
+DATA_TERMS_UNVERIFIED_NOTE = (
+    "エンドポイント・モデルID・パラメーター・状態値・エラー・価格・"
+    "データ取扱い条件は公式資料で確認済み（2026-09-08）。"
+    "有料アカウントの契約、成果物の配信ホストの設定、生成物の公開範囲の確認が"
+    "済んでいないため、実生成は選べません。詳細は docs/provider-contracts.md を参照。"
 )
+
+# --- 確認済みの価格（仕様第11章。金額は micro-USD の整数で持つ） ----------------
+#
+# Tripo: 1credit = $0.01、画像→3D テクスチャ付き 30credits ＝ $0.30/件
+# Meshy: 画像→3D テクスチャ付き 30credits。USD単価は購入経路で変わるため、
+#        **最も高い経路**（追加クレジットパック $10 / 250credits ＝ $0.04/credit）で
+#        見積もる。price_max_micro_usd は「上限額」なので最大値を入れるのが正しい。
+#        定額プラン（Pro $20/1,000credits ＝ $0.02/credit）ならこれより安くなる。
+_MICRO = 1_000_000
+TRIPO_CREDITS_PER_ITEM = 30
+TRIPO_MICRO_USD_PER_CREDIT = 10_000  # $0.01
+MESHY_CREDITS_PER_ITEM = 30
+MESHY_MICRO_USD_PER_CREDIT = 40_000  # $0.04（$10 / 250credits の追加クレジットパック）
+
+CONFIRMED_PRICES: dict[str, dict] = {
+    "tripo-standard": {
+        "price_max_micro_usd": TRIPO_CREDITS_PER_ITEM * TRIPO_MICRO_USD_PER_CREDIT,  # 300_000
+        "price_version": "tripo-2026-09-08",
+        "price_checked_on": "2026-09-08",
+        "price_source_url": "https://developers.tripo3d.ai/en/pricing",
+        "display_name": "Tripo 標準",
+    },
+    "meshy-standard": {
+        "price_max_micro_usd": MESHY_CREDITS_PER_ITEM * MESHY_MICRO_USD_PER_CREDIT,  # 1_200_000
+        "price_version": "meshy-2026-09-08-extra-pack",
+        "price_checked_on": "2026-09-08",
+        "price_source_url": "https://meshy.ai/settings/subscription",
+        "display_name": "Meshy 標準",
+    },
+}
 
 SEED: list[dict] = [
     {
@@ -48,7 +80,7 @@ SEED: list[dict] = [
         # モデルID・パラメーターは公式SDK tripo3d 0.4.2 の image_to_model の定義で確認済み。
         # 価格とデータ取扱い条件が未確認のため、無効のままにする
         "code": "tripo-standard",
-        "display_name": "Tripo 標準（価格未確認）",
+        "display_name": "Tripo 標準",
         "provider": "tripo",
         "model_id": "v2.5-20250123",
         "settings": {
@@ -62,19 +94,20 @@ SEED: list[dict] = [
         },
         "version": "1",
         "sdk_version": "tripo3d==0.4.2",
+        # 契約と運用の前提が整うまで無効のまま
         "is_enabled": False,
-        "price_max_micro_usd": None,
-        "price_version": "",
-        "price_checked_on": None,
-        "price_source_url": "https://developers.tripo3d.ai/en/pricing",
-        "is_unverified": True,
-        "unverified_note": PRICE_UNVERIFIED_NOTE,
+        "price_max_micro_usd": CONFIRMED_PRICES["tripo-standard"]["price_max_micro_usd"],
+        "price_version": CONFIRMED_PRICES["tripo-standard"]["price_version"],
+        "price_checked_on": CONFIRMED_PRICES["tripo-standard"]["price_checked_on"],
+        "price_source_url": CONFIRMED_PRICES["tripo-standard"]["price_source_url"],
+        "is_unverified": False,
+        "unverified_note": DATA_TERMS_UNVERIFIED_NOTE,
     },
     {
         # エンドポイント・パラメーター・状態値は公式CLI meshy-cli 0.2.0 のソースで確認済み。
         # Meshy は「モードがモデル」で、standard は meshy-7 に対応する
         "code": "meshy-standard",
-        "display_name": "Meshy 標準（価格未確認）",
+        "display_name": "Meshy 標準",
         "provider": "meshy",
         "model_id": "standard (meshy-7)",
         "settings": {
@@ -86,13 +119,14 @@ SEED: list[dict] = [
         },
         "version": "1",
         "sdk_version": "meshy-cli==0.2.0 で確認した公式契約に基づく自前のHTTP実装",
+        # 契約と運用の前提が整うまで無効のまま
         "is_enabled": False,
-        "price_max_micro_usd": None,
-        "price_version": "",
-        "price_checked_on": None,
-        "price_source_url": "https://docs.meshy.ai/en/api/pricing",
-        "is_unverified": True,
-        "unverified_note": PRICE_UNVERIFIED_NOTE,
+        "price_max_micro_usd": CONFIRMED_PRICES["meshy-standard"]["price_max_micro_usd"],
+        "price_version": CONFIRMED_PRICES["meshy-standard"]["price_version"],
+        "price_checked_on": CONFIRMED_PRICES["meshy-standard"]["price_checked_on"],
+        "price_source_url": CONFIRMED_PRICES["meshy-standard"]["price_source_url"],
+        "is_unverified": False,
+        "unverified_note": DATA_TERMS_UNVERIFIED_NOTE,
     },
 ]
 
@@ -199,8 +233,44 @@ def refresh_placeholder_presets(db: Session) -> int:
     return updated
 
 
+def apply_confirmed_prices(db: Session) -> int:
+    """公式資料で確認できた価格を、まだ価格が入っていない行に反映する（仕様第11章）。
+
+    既に価格が入っている行は書き換えない。運営が管理画面で入れた値を勝手に
+    上書きしないため。過去の実行は generations のスナップショットを見るので、
+    この更新では変わらない（仕様第8章）。
+
+    `is_enabled` はここでは触らない。契約と運用の前提が整うまで、
+    実生成に選べない状態を保つ。
+    """
+    updated = 0
+    for code, price in CONFIRMED_PRICES.items():
+        preset = db.scalar(select(Preset).where(Preset.code == code))
+        if preset is None or preset.price_max_micro_usd is not None:
+            continue
+        preset.price_max_micro_usd = price["price_max_micro_usd"]
+        preset.price_version = price["price_version"]
+        preset.price_checked_on = price["price_checked_on"]
+        preset.price_source_url = price["price_source_url"]
+        preset.display_name = price["display_name"]
+        preset.is_unverified = False
+        preset.unverified_note = DATA_TERMS_UNVERIFIED_NOTE
+        updated += 1
+    db.flush()
+    return updated
+
+
 def selectable_reasons(preset: Preset, *, live: bool) -> list[str]:
-    """実生成を選べない理由を日本語で返す（仕様第6.3章）。空なら選択可。"""
+    """実生成を選べない理由を日本語で返す（仕様第6.3章）。空なら選択可。
+
+    仕様第6.3章は「キー未設定、価格未確認、無効プリセット、利用同意未取得、
+    送信枠なし、上限額超過は実生成を選択不可とする」と定める。
+    このうちプリセット単体で判定できるものをここで返す
+    （同意・送信枠・上限額は生成受付時に `generation.check_can_submit` が見る）。
+    """
+    # 循環importを避けるため関数内でimportする
+    from app.services import provider_health
+
     reasons: list[str] = []
     if not preset.is_enabled:
         reasons.append("プリセットが無効です")
@@ -208,4 +278,6 @@ def selectable_reasons(preset: Preset, *, live: bool) -> list[str]:
         reasons.append("価格・モデルIDが未確認です")
     if live and preset.price_max_micro_usd is None:
         reasons.append("上限額を見積もれません")
+    if live:
+        reasons.extend(provider_health.blocking_reasons(preset.provider))
     return reasons

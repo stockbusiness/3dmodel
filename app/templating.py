@@ -37,8 +37,20 @@ def _jst(value: datetime | None) -> str:
     return value.astimezone(JST).strftime("%Y-%m-%d %H:%M")
 
 
+def _human_bytes(value: int | None) -> str:
+    """人が読める大きさ。小さいファイルが 0.00 MiB に潰れないようにする。"""
+    if value is None:
+        return "—"
+    if value < 1024:
+        return f"{value} B"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} KiB"
+    return f"{value / (1024 * 1024):.2f} MiB"
+
+
 templates.env.filters["jst"] = _jst
 templates.env.filters["usd"] = format_micro_usd
+templates.env.filters["bytes"] = _human_bytes
 
 COMMON_CONTEXT: dict[str, Any] = {
     "subject_tags": SUBJECT_TAGS,

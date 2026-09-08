@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ experiment.name }}｜3Dアート品質検証{% endblock %}
+
 {% block content %}
 <h1>{{ experiment.name }}
   {% if experiment.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}
@@ -22,20 +23,31 @@
     <dt>合格1件あたり費用</dt><dd>{{ summary.cost_per_passed_micro_usd | usd }}</dd>
     <dt>講師作業時間</dt><dd>{{ summary.work_seconds }} 秒</dd>
   </dl>
-  <p><a class="button secondary" href="/api/experiments/{{ experiment.id }}/export.csv">CSVを出力する</a></p>
+  <div class="viewer-controls">
+    <a class="button" href="/experiments/{{ experiment.id }}/report">集計と判定表を見る</a>
+    <a class="button secondary" href="/api/experiments/{{ experiment.id }}/export.csv">CSVを出力する</a>
+  </div>
   <p class="footnote">
-    上限額の判定・送信枠・判定表は A2／A4 で実装します。現在の数値はモックによるもので、品質実績ではありません。
+    {% if not experiment.is_live %}この数値はモックによるもので、品質実績ではありません。{% endif %}
+    未評価が残っているあいだの合格数は暫定です。
   </p>
+</div>
+
+<h2>比較</h2>
+<div class="panel" data-comparisons="{{ experiment.id }}">
+  <p class="footnote">同じ画像を2社へ送った結果です。評価が終わるまでサービス名は伏せています。</p>
+  <div data-comparison-list><p>読み込んでいます。</p></div>
 </div>
 
 <h2>題材</h2>
 {% if not assets %}
   <div class="panel"><p>題材はまだありません。下のフォームから画像を登録してください。</p></div>
 {% else %}
-<div class="panel table-scroll">
+<div class="panel table-scroll" data-experiment="{{ experiment.id }}" data-poll-seconds="{{ list_poll_seconds }}">
+  <p class="footnote" data-list-updated></p>
   <table>
     <thead>
-      <tr><th>題材名</th><th>題材タグ</th><th>出所分類</th><th>利用同意</th><th>画像</th><th>生成</th></tr>
+      <tr><th>題材名</th><th>題材タグ</th><th>出所分類</th><th>利用同意</th><th>画像</th><th>生成</th><th>状態</th></tr>
     </thead>
     <tbody>
     {% for row in assets %}
@@ -52,6 +64,7 @@
         </td>
         <td>{{ row.variant_count }}</td>
         <td>{{ row.generation_count }}</td>
+        <td data-asset-status="{{ row.asset.id }}">{{ row.status_label }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -94,4 +107,8 @@
     <p><button type="submit">登録する</button></p>
   </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/list.js"></script>
 {% endblock %}

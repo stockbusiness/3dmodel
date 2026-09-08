@@ -95,6 +95,34 @@
       <p><button type="submit" data-submit-once>生成する</button></p>
     </form>
 
+    <h3>2社で比較する</h3>
+    <form method="post" action="/comparisons">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="variant_id" value="{{ variant.id }}">
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      <label for="preset_a_{{ variant.id }}">サービスA のプリセット</label>
+      <select id="preset_a_{{ variant.id }}" name="preset_a" required>
+        {% for item in presets %}
+          <option value="{{ item.preset.id }}"{% if item.reasons %} disabled{% endif %}>
+            {{ item.preset.display_name }}（{{ item.preset.provider }}）
+          </option>
+        {% endfor %}
+      </select>
+      <label for="preset_b_{{ variant.id }}">サービスB のプリセット<span class="hint">Aとは違うサービスを選びます。</span></label>
+      <select id="preset_b_{{ variant.id }}" name="preset_b" required>
+        {% for item in presets %}
+          <option value="{{ item.preset.id }}"{% if item.reasons %} disabled{% endif %}>
+            {{ item.preset.display_name }}（{{ item.preset.provider }}）
+          </option>
+        {% endfor %}
+      </select>
+      <p class="footnote">
+        2社分の見積を合算して上限額を判定します。片方分しか残っていなければ、どちらも送りません。
+        評価が終わるまで、どちらがどのサービスかは伏せます（ブラインド）。
+      </p>
+      <p><button type="submit" class="secondary" data-submit-once>2社へ送る</button></p>
+    </form>
+
     <details class="advanced">
       <summary>運営用の詳細</summary>
       <dl class="kv">

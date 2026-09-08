@@ -87,6 +87,19 @@ class DownloadedResult:
     content_type: str = "model/gltf-binary"
 
 
+@dataclass(frozen=True)
+class ConnectionCheck:
+    """接続テストの結果（管理画面用）。
+
+    detail / note は画面に出す日本語。**APIキー・Bearerヘッダー・事業者の応答原文は
+    絶対に含めない**（仕様第12章）。
+    """
+
+    ok: bool
+    detail: str = ""
+    note: str = ""
+
+
 class ProviderAdapter(ABC):
     name: str = "base"
     # 公式APIが取消に対応しているか（仕様第8章）
@@ -114,6 +127,14 @@ class ProviderAdapter(ABC):
     def cancel(self, provider_task_id: str) -> None:
         """公式APIが対応している場合だけ実装する（仕様第8章）。"""
         raise UnsupportedOperation(f"{self.name} は取消に対応していません")
+
+    def check_connection(self) -> ConnectionCheck:
+        """認証が通るかだけを確かめる。**生成は行わないので課金は発生しない。**
+
+        公式資料で「無課金で叩ける読み取り操作」を確認できた事業者だけ実装する。
+        確認できていない事業者は UnsupportedOperation を上げる（推測で叩かない）。
+        """
+        raise UnsupportedOperation(f"{self.name} は接続テストに対応していません")
 
     @staticmethod
     def preset_snapshot(preset: Preset) -> str:

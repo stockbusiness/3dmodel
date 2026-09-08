@@ -116,6 +116,13 @@ class Experiment(Base, TimestampMixin):
     is_live: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # 集計区分。A3.5の「早期確認」を通常検証と分離する（仕様第10章）
     track: Mapped[str] = mapped_column(String(32), default="standard", nullable=False)
+    # 校正対象の件数。既定は設定値（講師1名運用のため 0）。仕様第10章
+    calibration_target_count: Mapped[int | None] = mapped_column(Integer)
+    # 校正対象の集計に使う評価者。運営が後から指定する。
+    # 未指定なら校正対象は集計から除外する（仕様第10章）
+    calibration_reviewer_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("operators.id", name="fk_experiments_calibration_reviewer")
+    )
     created_by: Mapped[str] = mapped_column(String(36), ForeignKey("operators.id"), nullable=False)
 
     __table_args__ = (

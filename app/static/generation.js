@@ -204,3 +204,69 @@ bind();
 if (panel && panel.dataset.inProgress === "1") {
   window.setTimeout(poll, DETAIL_POLL_MS);
 }
+
+
+// --- 実費の記録（仕様第11章） ------------------------------------------------
+
+const costForm = document.querySelector("[data-cost]");
+if (costForm) {
+  const result = document.querySelector("[data-cost-result]");
+  const button = document.querySelector("[data-cost-submit]");
+
+  function toMicroUsd(text) {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return null;
+    if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) return NaN;
+    // 浮動小数点を経由せず整数にする（仕様第9章）
+    const [whole, fraction = ""] = trimmed.split(".");
+    return Number(whole) * 1000000 + Number((fraction + "000000").slice(0, 6));
+  }
+
+  button.addEventListener("click", async () => {
+    const amount = toMicroUsd(costForm.querySelector("[name=amount_usd]").value);
+    const reference = costForm.querySelector("[name=reference]").value.trim();
+    const evidence = costForm.querySelector("[name=evidence_note]").value.trim();
+    const checkedOn = costForm.querySelector("[name=checked_on]").value || null;
+
+    const show = (text, kind) => {
+      result.textContent = text;
+      result.className = "notice " + kind;
+      result.hidden = false;
+    };
+
+    if (amount === null || Number.isNaN(amount)) {
+      show("金額は 0.30 のような形式で入力してください。", "warn");
+      return;
+    }
+    if (!reference || !evidence) {
+      show("明細の識別と証跡・メモは必須です。", "warn");
+      return;
+    }
+
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/generations/${costForm.dataset.cost}/costs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+        body: JSON.stringify({
+          amount_micro_usd: amount,
+          reference,
+          evidence_note: evidence,
+          checked_on: checkedOn,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "記録できませんでした");
+      show(
+        data.duplicated
+          ? "同じ明細がすでに記録されています。二重には計上していません。"
+          : "実費を記録しました。",
+        data.duplicated ? "warn" : "ok"
+      );
+    } catch (error) {
+      show(error.message, "danger");
+    } finally {
+      button.disabled = false;
+    }
+  });
+}

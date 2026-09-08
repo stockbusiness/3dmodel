@@ -51,11 +51,11 @@ def test_verified_preset_is_bounded(adapter):
     assert estimate.max_micro_usd == 300_000
 
 
-@pytest.mark.parametrize("adapter", [TripoAdapter(), MeshyAdapter()])
-def test_cancel_is_unsupported(adapter):
-    """公式APIで取消を確認できていないため未対応（仕様第8章）。"""
+def test_tripo_cancel_is_unsupported():
+    """Tripoは公式SDKに取消が無いため未対応（仕様第8章）。"""
     from app.providers.base import UnsupportedOperation
 
+    adapter = TripoAdapter()
     assert adapter.supports_cancel is False
     with pytest.raises(UnsupportedOperation):
         adapter.cancel("task-1")
@@ -240,6 +240,30 @@ def test_meshy_error_body_is_not_returned_to_the_screen(settings_env, monkeypatc
     assert secret not in str(excinfo.value)
 
 
+def test_meshy_cancel_calls_the_documented_delete(settings_env, monkeypatch):
+    """取消は DELETE /image-to-3d/{id}（公式資料で確認済み）。"""
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"result": "task-1"})
+
+    _meshy_client(monkeypatch, handler)
+    adapter = MeshyAdapter()
+    assert adapter.supports_cancel is True
+    adapter.cancel("task-1")
+    assert seen["method"] == "DELETE"
+    assert seen["path"].endswith("/image-to-3d/task-1")
+
+
+def test_meshy_cancel_of_a_finished_task_is_reported_as_not_cancelled(settings_env, monkeypatch):
+    """終了済みのタスクは取り消せない。未取消として扱えるよう例外にする（仕様第8章）。"""
+    _meshy_client(monkeypatch, lambda request: httpx.Response(400, json={"message": "x"}))
+    with pytest.raises(ProviderError):
+        MeshyAdapter().cancel("task-1")
+
+
 def test_meshy_download_is_blocked_without_allowed_hosts(settings_env):
     with pytest.raises(ProviderError) as excinfo:
         MeshyAdapter().download_result("https://cdn.example.com/a.glb")
@@ -313,8 +337,11 @@ def test_external_uri_glb_from_a_real_adapter_is_rejected(operator, monkeypatch)
         assert db.scalar(select(Artifact).where(Artifact.generation_id == generation_id)) is None
 
 
-def test_unverified_presets_cannot_be_used_for_live_generation(operator):
-    """価格未確認のプリセットは実生成に選べない（仕様第6.3章・第11章）。"""
+def test_real_presets_cannot_be_used_for_live_generation(operator):
+    """契約と運用の前提が整うまで、実生成に選べない（仕様第6.3章・第11章）。
+
+    価格とデータ取扱い条件は確認済みになったが、それだけでは選べるようにしない。
+    """
     from sqlalchemy import select
 
     from app.db import session_scope
@@ -329,11 +356,56 @@ def test_unverified_presets_cannot_be_used_for_live_generation(operator):
         op = db.scalars(select(Operator)).first()
         for code in ("tripo-standard", "meshy-standard"):
             preset = db.scalar(select(Preset).where(Preset.code == code))
-            assert preset.is_unverified is True
             assert preset.is_enabled is False
             with pytest.raises(GenerationRejected) as excinfo:
                 create_generation(db, operator=op, variant_id=variant_id, preset_id=preset.id)
             assert "未確認" in str(excinfo.value) or "無効" in str(excinfo.value)
+
+
+def test_confirmed_prices_are_stored_as_integers(db_ready):
+    """価格は micro-USD の整数で持つ。上限側を採る（仕様第11章）。"""
+    from sqlalchemy import select
+
+    from app.db import session_scope
+    from app.models import Preset
+
+    with session_scope() as db:
+        tripo = db.scalar(select(Preset).where(Preset.code == "tripo-standard"))
+        meshy = db.scalar(select(Preset).where(Preset.code == "meshy-standard"))
+
+        # Tripo: 30credits x $0.01 = $0.30
+        assert tripo.price_max_micro_usd == 300_000
+        assert tripo.price_checked_on == "2026-09-08"
+
+        # Meshy: 30credits x $0.04（最も高い購入経路＝追加クレジットパック $10/250）= $1.20
+        assert meshy.price_max_micro_usd == 1_200_000
+        assert meshy.price_checked_on == "2026-09-08"
+
+        for preset in (tripo, meshy):
+            assert isinstance(preset.price_max_micro_usd, int)
+            assert preset.is_unverified is False
+            # 価格とデータ取扱い条件が確認できても、それだけでは有効にしない
+            assert preset.is_enabled is False
+
+
+def test_confirmed_price_is_not_overwritten(db_ready):
+    """運営が入れた価格を、確認済みの既定値で勝手に上書きしない。"""
+    from sqlalchemy import select
+
+    from app.db import session_scope
+    from app.models import Preset
+    from app.services.presets import apply_confirmed_prices
+
+    with session_scope() as db:
+        preset = db.scalar(select(Preset).where(Preset.code == "meshy-standard"))
+        preset.price_max_micro_usd = 999_000
+        preset.price_version = "operator"
+
+    with session_scope() as db:
+        assert apply_confirmed_prices(db) == 0
+        preset = db.scalar(select(Preset).where(Preset.code == "meshy-standard"))
+        assert preset.price_max_micro_usd == 999_000
+        assert preset.price_version == "operator"
 
 
 # --- 公式SDKを実際に通す結合試験（外部へは接続しない） -----------------------

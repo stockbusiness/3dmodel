@@ -1,0 +1,34 @@
+# 限定公開環境用の上書き（仕様第3章・第12章）
+#
+# 使い方：
+#   docker compose -f compose.yaml -f deploy/compose.public.yaml up -d
+#
+# ローカル開発との違い：
+# - web は 127.0.0.1 にだけ開き、外からは Caddy 経由でしか届かない
+# - セッションCookieに secure が付くよう、HTTPSで受けることを前提にする
+# - 実API生成の可否とAPIキーは .env で明示的に与える（既定は無効のまま）
+
+services:
+  web:
+    ports:
+      # ホストの 127.0.0.1 のみ。Caddy が同じホストからここへ中継する
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Caddy が付ける X-Forwarded-Proto を信頼して https と扱う
+      FORWARDED_ALLOW_IPS: "127.0.0.1"
+    command:
+      - "uvicorn"
+      - "app.main:app"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--workers"
+      - "1"
+      - "--proxy-headers"
+      - "--forwarded-allow-ips"
+      - "127.0.0.1"
+    restart: always
+
+  worker:
+    restart: always

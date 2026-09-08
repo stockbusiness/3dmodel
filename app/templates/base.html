@@ -14,6 +14,7 @@
     <nav>
       {% if operator %}
         <a href="/">検証セット一覧</a>
+        <a href="/admin">管理</a>
         <span class="footnote">{{ operator.display_name }} でログイン中</span>
         <form method="post" action="/logout" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}管理{% endblock %}
+{% block content %}
+<h1>管理</h1>
+
+<div class="notice warn">
+  <strong>APIキーはこの画面から保存できません。</strong>
+  キーは環境変数（<code>.env</code>）からのみ読みます。
+  この画面が示すのは「設定されているか」「先頭が想定どおりか」だけで、
+  <strong>値そのものは表示も記録もしません</strong>。
+</div>
+
+<h2>運用の状態</h2>
+<div class="panel">
+  <dl class="kv">
+    <dt>実API生成</dt>
+    <dd>
+      {% if live_api_enabled %}
+        <span class="badge live">有効</span> <code>LIVE_API_ENABLED=true</code>
+      {% else %}
+        <span class="badge mock">無効</span> <code>LIVE_API_ENABLED=false</code>（既定）
+      {% endif %}
+    </dd>
+    <dt>全体上限額</dt>
+    <dd>
+      {% if global_cost_cap_usd %}{{ global_cost_cap_usd }} USD
+      {% else %}<span class="badge warn">未設定</span> 設定するまで実API生成はできません{% endif %}
+    </dd>
+    <dt>同時外部タスク</dt>
+    <dd>全体 {{ max_concurrent_total }} 件／各社 {{ max_concurrent_per_provider }} 件</dd>
+    <dt>成果物</dt>
+    <dd>
+      {{ artifact_summary.count }} 件（実API {{ artifact_summary.live_count }} 件・モック {{ artifact_summary.mock_count }} 件）／
+      <a href="/admin/artifacts">成果物の管理へ</a>
+    </dd>
+  </dl>
+</div>
+
+<h2>事業者接続</h2>
+
+{% for p in providers %}
+<div class="panel">
+  <h3>{{ p.provider }}</h3>
+
+  {% if p.blocking_reasons %}
+    <div class="notice danger" role="alert">
+      実生成に進めません：{{ p.blocking_reasons | join("／") }}
+    </div>
+  {% else %}
+    <div class="notice ok">事業者側の設定は揃っています。</div>
+  {% endif %}
+
+  <h4>自己診断（外部通信なし）</h4>
+  <ul class="checks">
+    {% for c in p.checks %}
+      <li>
+        {% if c.ok and not c.is_warning %}<span class="badge ok">OK</span>
+        {% elif c.is_warning %}<span class="badge warn">注意</span>
+        {% else %}<span class="badge">未</span>{% endif %}
+        <strong>{{ c.label }}</strong>：{{ c.detail }}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <h4>APIキーの設定手順</h4>
+  <p class="footnote">
+    キーはサーバーの <code>.env</code> に書き、web と worker を再起動してください。
+    <strong><code>.env</code> はコミットしないでください。</strong>
+  </p>
+  <pre class="mono">{{ p.env_hint }}</pre>
+  <p class="footnote">
+    いまの状態：
+    {% if not p.key_is_set %}
+      <strong>未設定</strong>（環境変数 <code>{{ p.env_name }}</code>）
+    {% elif p.key_prefix_ok %}
+      <strong>設定済み</strong>
+    {% else %}
+      <strong>設定済みだが先頭が想定と違う</strong>
+    {% endif %}
+  </p>
+
+  <h4>接続テスト</h4>
+  <p class="footnote">
+    認証が通るかだけを確かめます。<strong>生成は行わないので課金は発生しません。</strong>
+    ただし外部へ通信するため、<code>LIVE_API_ENABLED=true</code> のときだけ実行できます。
+    実行は監査ログに残ります。
+  </p>
+  {% if not p.supports_connection_test %}
+    <p><span class="badge warn">未対応</span> この事業者の接続テストは実装していません。</p>
+  {% else %}
+    <button type="button" class="secondary" data-connection-test="{{ p.provider }}"
+            {% if not live_api_enabled %}disabled{% endif %}>
+      接続テストを実行
+    </button>
+    {% if not live_api_enabled %}
+      <span class="footnote">実APIが無効のため実行できません。</span>
+    {% endif %}
+    <p class="notice" hidden id="conn-result-{{ p.provider }}" role="status"></p>
+  {% endif %}
+
+  <h4>プリセット</h4>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>コード</th><th>モデル</th><th>見積（上限側）</th>
+          <th>価格の版・確認日</th><th>実生成に選べるか</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for preset in p.presets %}
+        <tr>
+          <td><code>{{ preset.code }}</code><br><span class="footnote">{{ preset.display_name }}</span></td>
+          <td class="mono">{{ preset.model_id or "—" }}</td>
+          <td>
+            {% if preset.price_max_micro_usd is not none %}
+              ${{ "%.2f"|format(preset.price_max_micro_usd / 1000000) }}
+              <span class="footnote">（{{ preset.price_max_micro_usd }} micro-USD）</span>
+            {% else %}
+              <span class="badge warn">未設定</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ preset.price_version or "—" }}<br>
+            <span class="footnote">{{ preset.price_checked_on or "確認日なし" }}</span>
+          </td>
+          <td>
+            {% if preset.blocked_reasons %}
+              <span class="badge">不可</span>
+              <span class="footnote">{{ preset.blocked_reasons | join("／") }}</span>
+            {% else %}
+              <span class="badge ok">可</span>
+            {% endif %}
+            {% if preset.unverified_note %}
+              <details class="advanced">
+                <summary>確認状況</summary>
+                <p class="footnote">{{ preset.unverified_note }}</p>
+              </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+<h2>保存領域の点検</h2>
+<div class="panel">
+  <p class="footnote">
+    記録はあるのに実物が無いもの（欠落）と、実物はあるのに参照されていないもの（孤立）を探します。
+    <strong>この画面に削除機能はありません。</strong>見つけた内容の扱いは運営が判断してください。
+  </p>
+  <button type="button" class="secondary" id="storage-audit">点検を実行</button>
+  <div id="storage-result" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/admin.js" defer></script>
+{% endblock %}

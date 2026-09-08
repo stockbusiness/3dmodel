@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}集計と判定表｜{{ experiment.name }}{% endblock %}
+{% block content %}
+<p class="footnote"><a href="/experiments/{{ experiment.id }}">← {{ experiment.name }}</a></p>
+<h1>集計と判定表
+  {% if experiment.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}
+  <span class="badge">{{ "早期確認" if experiment.track == "early_check" else "通常検証" }}</span>
+</h1>
+
+<div class="notice warn">
+  この集計は<strong>この検証セットの中だけ</strong>のものです。
+  実APIとモック、通常検証と早期確認は別のセットとして扱い、混ぜていません。
+  未評価が残っているセルは「暫定」と表示します。判定の最終判断は運営が行います。
+</div>
+
+<h2>判定表（サービス × 題材タグ）</h2>
+<div class="panel">
+  <p class="footnote">
+    判定の初期値：サンプル不足＝初回送信題材数が{{ thresholds.min_samples }}件未満／
+    採用候補＝2回以内合格率{{ thresholds.adopt_within_two }}%以上かつ初回合格率{{ thresholds.adopt_first }}%以上／
+    保留＝2回以内合格率{{ thresholds.hold_within_two }}%以上{{ thresholds.adopt_within_two }}%未満／
+    不適＝2回以内合格率{{ thresholds.hold_within_two }}%未満、または重大不具合の発生率{{ thresholds.unsuitable_defect }}%以上。
+    <strong>閾値は仮置きです。</strong>
+  </p>
+
+  {% if not report.cells %}
+    <p>まだ集計できる生成がありません。</p>
+  {% else %}
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>題材タグ</th>
+          {% for provider in report.providers %}<th>{{ provider }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for tag in report.subject_tags %}
+        <tr>
+          <th>{{ subject_tags.get(tag, tag) }}</th>
+          {% for provider in report.providers %}
+            {% set cell = report.cell(provider, tag) %}
+            <td>
+              {% if not cell %}
+                <span class="footnote">—</span>
+              {% else %}
+                <span class="badge {{ 'ok' if cell.verdict == '採用候補' else ('warn' if cell.verdict in ('保留','サンプル不足') else '') }}">
+                  {{ cell.verdict }}
+                </span>
+                {% if cell.is_provisional %}<span class="footnote">（暫定）</span>{% endif %}
+                <dl class="kv" style="margin-top:8px">
+                  <dt>初回送信題材</dt><dd>{{ cell.first_sent_assets }}</dd>
+                  <dt>初回合格率</dt>
+                  <dd>{{ (cell.first_pass_percent ~ "%") if cell.first_pass_percent is not none else "算出不可" }}</dd>
+                  <dt>品質のみ初回合格率</dt>
+                  <dd>{{ (cell.quality_only_first_pass_percent ~ "%") if cell.quality_only_first_pass_percent is not none else "算出不可" }}</dd>
+                  <dt>2回以内合格率</dt>
+                  <dd>{{ (cell.within_two_pass_percent ~ "%") if cell.within_two_pass_percent is not none else "算出不可" }}</dd>
+                  <dt>重大不具合の発生率</dt>
+                  <dd>{{ (cell.defect_percent ~ "%") if cell.defect_percent is not none else "算出不可" }}</dd>
+                  <dt>技術完了／未評価</dt><dd>{{ cell.tech_completed }} ／ {{ cell.unreviewed }}</dd>
+                  <dt>技術失敗（評価に至らず）</dt><dd>{{ cell.tech_failed_unreviewed_assets }}</dd>
+                  <dt>脱落</dt><dd>{{ cell.dropped_assets }}</dd>
+                </dl>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h3>採用候補となった題材タグ</h3>
+  <dl class="kv">
+    {% for provider in report.providers %}
+      <dt>{{ provider }}</dt>
+      <dd>
+        {% set tags = report.candidate_tags(provider) %}
+        {{ tags | join("・") if tags else "なし" }}（{{ tags | length }}タグ）
+      </dd>
+    {% endfor %}
+  </dl>
+  <p class="footnote">
+    サービスの選定は、採用候補となった題材タグ数が多い方を優先し、同数なら合格題材1件あたり費用、
+    次にp95待ち時間の短い方とします。両社とも0タグなら、今回の設定・費用では見送りの判断材料になります。
+    <strong>この画面は数え上げであり、判断そのものではありません。</strong>
+  </p>
+  {% endif %}
+</div>
+
+<h2>待ち時間・保存・作業時間</h2>
+<div class="panel">
+  <dl class="kv">
+    <dt>受付〜評価待ち p50</dt>
+    <dd>{{ (report.timings.p50 ~ " 秒") if report.timings.p50 is not none else "算出不可" }}</dd>
+    <dt>受付〜評価待ち p95</dt>
+    <dd>{{ (report.timings.p95 ~ " 秒") if report.timings.p95 is not none else "算出不可" }}</dd>
+    <dt>完了した件数</dt><dd>{{ report.timings.completed }}</dd>
+    <dt>停止している件数</dt><dd>{{ report.timings.stopped }}<span class="footnote">（受付結果不明・確認を一時停止）</span></dd>
+    <dt>保存成功率</dt>
+    <dd>{{ (report.save_success_percent ~ "%") if report.save_success_percent is not none else "算出不可" }}</dd>
+    <dt>講師の作業時間</dt><dd>{{ report.work_seconds }} 秒</dd>
+    <dt>ブラインド評価</dt><dd>{{ report.blind_reviews }} 件</dd>
+    <dt>非ブラインド評価</dt><dd>{{ report.non_blind_reviews }} 件<span class="footnote">（集計では区別します）</span></dd>
+  </dl>
+  <p class="footnote">
+    授業投入時の仮目標：初回合格率{{ targets.first }}%以上、2回以内合格率{{ targets.within_two }}%以上、
+    講師作業平均{{ targets.work_seconds // 60 }}分以内。<strong>達成保証でも実測値でもありません。</strong>
+    生成の待ち時間と講師の実作業時間は別のものです。
+  </p>
+</div>
+
+<h2>費用</h2>
+<div class="panel">
+  <dl class="kv">
+    <dt>見積累計（送信済み全件）</dt><dd>{{ cap_state.committed_micro_usd | usd }}</dd>
+    <dt>手動確認済み実績</dt><dd>{{ confirmed_micro_usd | usd }}</dd>
+    <dt>失敗・要照合</dt><dd>{{ summary.unreconciled_micro_usd | usd }}</dd>
+    <dt>上限額</dt><dd>{{ experiment.cost_cap_micro_usd | usd }}</dd>
+    <dt>上限額との差</dt>
+    <dd>{{ cap_state.remaining_micro_usd | usd if cap_state.remaining_micro_usd is not none else "上限額が未設定" }}</dd>
+    <dt>合格1件あたり費用</dt><dd>{{ summary.cost_per_passed_micro_usd | usd }}</dd>
+  </dl>
+  {% if overrun_micro_usd > 0 %}
+  <div class="notice danger">
+    <strong>確定した実費が見積の合計を超えています（超過 {{ overrun_micro_usd | usd }}）。</strong>
+    見積の前提を見直すまで、新規の生成は受け付けません。
+  </div>
+  {% endif %}
+  <p class="footnote">
+    見積と実績は別の行として保存し、混ぜていません。実績は事業者の管理画面と照合して手入力します
+    （入力は監査ログに残り、同じ明細を二重に計上しません）。
+    保存・通信・開発費は生成APIの実費とは別で、ここには含めていません（未測定であり、0ではありません）。
+  </p>
+</div>
+
+<h2>評価の校正</h2>
+<div class="panel">
+  {% if not calibration.in_use %}
+    <p>校正は行っていません（対象0件）。講師が2名になったら対象件数を設定してください。</p>
+    <div class="notice warn">校正未実施のため、評価基準のばらつきは検出していません。</div>
+  {% else %}
+    <dl class="kv">
+      <dt>対象件数</dt><dd>{{ calibration.target_count }}</dd>
+      <dt>2名そろっていない件数</dt><dd>{{ calibration.incomplete_count }}<span class="footnote">（集計に含めていません）</span></dd>
+      <dt>警告のある件数</dt><dd>{{ calibration.warning_count }}</dd>
+    </dl>
+    {% for entry in calibration.entries %}
+      {% if entry.has_warning %}
+      <div class="notice warn">
+        <a href="/generations/{{ entry.generation_id }}">この結果</a>で、
+        2名の評価が2段階以上離れた軸があります：
+        {% for difference in entry.differences %}
+          {{ difference.label }}（{{ difference.scores | join(" と ") }}、差 {{ difference.difference }}）{% if not loop.last %} ／ {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if calibration.chosen_reviewer_id is none %}
+      <div class="notice warn">
+        集計に使う評価者が未指定のため、校正対象は集計から除外しています（平均は使いません）。
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <form data-calibration="{{ experiment.id }}">
+    <label for="calibration_count">校正の対象件数<span class="hint">セット内の最初のN件。0で校正を行いません。</span></label>
+    <input id="calibration_count" name="target_count" type="number" min="0" step="1"
+           value="{{ experiment.calibration_target_count if experiment.calibration_target_count is not none else calibration.target_count }}">
+    <label for="calibration_reviewer">集計に使う評価者<span class="hint">未指定なら校正対象は集計から除外します。</span></label>
+    <select id="calibration_reviewer" name="reviewer_id">
+      <option value="">未指定</option>
+      {% for reviewer in reviewers %}
+        <option value="{{ reviewer.id }}"{% if reviewer.id == experiment.calibration_reviewer_id %} selected{% endif %}>
+          {{ reviewer.display_name }}
+        </option>
+      {% endfor %}
+    </select>
+    <p><button type="button" class="secondary" data-calibration-submit>設定を保存する</button></p>
+  </form>
+  <div class="notice" data-calibration-result hidden></div>
+</div>
+
+<p><a class="button secondary" href="/api/experiments/{{ experiment.id }}/export.csv">CSVを出力する</a></p>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/report.js"></script>
+{% endblock %}

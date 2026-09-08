@@ -8,10 +8,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import csrf_protect, current_operator
+from app.config import get_settings
 from app.db import db_session
 from app.models import Asset, Experiment, Generation, Operator
+from app.models.enums import TECH_STATUSES, VERDICTS
 from app.services import audit
-from app.services.review_aggregate import summarize_experiment
+from app.services.review_aggregate import latest_reviews, summarize_experiment
 from app.templating import render
 
 router = APIRouter()
@@ -118,14 +120,26 @@ def detail_page(
     ).all()
     rows = []
     for asset in assets:
-        generation_count = db.scalar(
-            select(func.count(Generation.id)).where(Generation.asset_id == asset.id)
-        )
+        generations = db.scalars(
+            select(Generation)
+            .where(Generation.asset_id == asset.id)
+            .order_by(Generation.created_at.desc())
+        ).all()
+        latest = generations[0] if generations else None
+        status_label = "—"
+        if latest is not None:
+            reviews = latest_reviews(db, [latest.id])
+            verdict = reviews[latest.id].verdict if latest.id in reviews else "unreviewed"
+            status_label = (
+                f"{TECH_STATUSES.get(latest.tech_status, latest.tech_status)}"
+                f"／{VERDICTS.get(verdict, verdict)}"
+            )
         rows.append(
             {
                 "asset": asset,
                 "variant_count": len(asset.variants),
-                "generation_count": generation_count or 0,
+                "generation_count": len(generations),
+                "status_label": status_label,
             }
         )
     return render(
@@ -136,6 +150,7 @@ def detail_page(
             "experiment": experiment,
             "assets": rows,
             "summary": summarize_experiment(db, experiment_id),
+            "list_poll_seconds": get_settings().list_poll_seconds,
         },
     )
 
