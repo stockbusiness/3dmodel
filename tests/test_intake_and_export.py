@@ -8,7 +8,13 @@ import io
 import pytest
 from PIL import Image
 
-from tests.conftest import CSRF_VALUE, create_experiment, mock_preset_id, upload_asset
+from tests.conftest import (
+    CSRF_VALUE,
+    create_and_run,
+    create_experiment,
+    mock_preset_id,
+    upload_asset,
+)
 
 
 def _jpeg_with_exif(orientation: int = 6) -> bytes:
@@ -85,7 +91,7 @@ def test_consent_missing_blocks_live_generation(db_ready, operator, monkeypatch)
         preset = db.query(Preset).filter(Preset.code == "mock-standard").one()
 
         with pytest.raises(GenerationRejected, match="利用同意が未取得"):
-            check_can_submit(db, variant, preset, live=True)
+            check_can_submit(variant, preset, live=True)
 
 
 def test_csv_escapes_formula_cells():
@@ -105,11 +111,7 @@ def test_csv_contains_no_storage_keys(auth_client, png_bytes):
     experiment_id = create_experiment(auth_client)
     asset_id = upload_asset(auth_client, experiment_id, png_bytes)
     variant = auth_client.get(f"/api/assets/{asset_id}").json()["variants"][0]
-    auth_client.post(
-        "/api/generations",
-        json={"asset_variant_id": variant["id"], "preset_id": mock_preset_id(auth_client)},
-        headers={"x-csrf-token": CSRF_VALUE},
-    )
+    create_and_run(auth_client, variant["id"], mock_preset_id(auth_client))
 
     body = auth_client.get(f"/api/experiments/{experiment_id}/export.csv").content.decode("utf-8")
     rows = list(csv.reader(io.StringIO(body.lstrip("﻿"))))
@@ -133,11 +135,7 @@ def test_csv_formula_from_user_input_is_escaped(auth_client, png_bytes):
     experiment_id = create_experiment(auth_client)
     asset_id = upload_asset(auth_client, experiment_id, png_bytes)
     variant_id = auth_client.get(f"/api/assets/{asset_id}").json()["variants"][0]["id"]
-    generation_id = auth_client.post(
-        "/api/generations",
-        json={"asset_variant_id": variant_id, "preset_id": mock_preset_id(auth_client)},
-        headers={"x-csrf-token": CSRF_VALUE},
-    ).json()["id"]
+    generation_id = create_and_run(auth_client, variant_id, mock_preset_id(auth_client))
     auth_client.post(
         f"/api/generations/{generation_id}/reviews",
         json={

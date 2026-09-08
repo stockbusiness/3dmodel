@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     # 送信枠（仕様第9章：検証セット内の asset×provider で 2 回）
     default_quota_per_asset_provider: int = 2
 
+    # 同時外部タスクの上限（仕様第8章：初期は全体2・各社1）。実際のAPI上限以下にする
+    max_concurrent_total: int = 2
+    max_concurrent_per_provider: int = 1
+
+    # 外部通信のタイムアウト秒（仕様第8章「ワーカーの処理単位」）
+    submit_timeout_seconds: int = 30
+    status_timeout_seconds: int = 30
+    download_timeout_seconds: int = 300
+
+    # ワーカーの待機秒
+    worker_interval_seconds: int = 5
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "app.db"

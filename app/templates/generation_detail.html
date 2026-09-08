@@ -6,18 +6,92 @@
   {% if generation.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}
 </h1>
 
-<div class="panel">
+<div class="panel" data-generation-id="{{ generation.id }}" data-in-progress="{{ 1 if in_progress else 0 }}">
+  <p>
+    <span class="badge" data-status-badge>{{ tech_statuses.get(generation.tech_status, generation.tech_status) }}</span>
+    <span class="footnote" data-status-note>{{ status_explanation }}</span>
+  </p>
   <dl class="kv">
-    <dt>技術状態</dt><dd>{{ tech_statuses.get(generation.tech_status, generation.tech_status) }}</dd>
     <dt>サービス</dt><dd>{{ generation.provider }}</dd>
-    <dt>試行回数</dt><dd>{{ generation.attempt_index }}</dd>
+    <dt>試行回数</dt><dd>{{ generation.attempt_index }}{% if generation.parent_id %}（再生成）{% endif %}</dd>
     <dt>受付日時</dt><dd>{{ generation.created_at | jst }}</dd>
+    <dt>受付からの経過</dt><dd data-elapsed>{{ elapsed_label }}</dd>
+    <dt>最終確認</dt><dd data-last-checked>{{ generation.last_checked_at | jst }}</dd>
+    <dt>進捗</dt>
+    <dd data-progress>
+      {%- if generation.progress_percent is not none %}{{ generation.progress_percent }}%
+      {%- else %}事業者が進捗を返さないため、段階のみ表示しています{% endif %}
+    </dd>
     <dt>完了日時</dt><dd>{{ generation.completed_at | jst }}</dd>
+    <dt>送信枠</dt><dd>{{ "消費している" if generation.consumes_quota else "返却済み" }}</dd>
     <dt>生成ID</dt><dd class="mono">{{ generation.id }}</dd>
   </dl>
   {% if generation.error_note %}
-    <div class="notice danger">{{ generation.error_note }}</div>
+    <div class="notice {{ 'danger' if generation.tech_status == 'provider_failed' else 'warn' }}">
+      {{ generation.error_note }}
+    </div>
   {% endif %}
+
+  <h3>この状態でできること</h3>
+  <p class="footnote">
+    <strong>追加の課金が発生するのは「再生成」だけです。</strong>
+    「状態を再確認」と「保存だけ再試行」は、すでにある同じタスクを見に行くだけで、
+    外部へ新しい生成を依頼しません。
+  </p>
+  <div class="viewer-controls">
+    {% if generation.tech_status in ("running", "monitoring_paused") %}
+      <button type="button" class="secondary" data-action="refresh">状態を再確認する（課金なし）</button>
+    {% endif %}
+    {% if generation.tech_status in ("download_failed", "validation_failed") %}
+      <button type="button" class="secondary" data-action="retry-download">保存だけ再試行する（課金なし）</button>
+    {% endif %}
+    {% if generation.tech_status not in ("ready_for_review", "cancelled") %}
+      <button type="button" class="secondary" data-action="cancel">中止を要望する</button>
+    {% endif %}
+  </div>
+
+  {% if generation.tech_status == "submission_unknown" %}
+  <div class="notice warn">
+    <p><strong>受付結果が分かりません。</strong>
+      事業者側にタスクが作られたかどうかを断定できないため、自動での再送信は行いません。
+      事業者の管理画面で履歴を確認し、下のいずれかを記録してください。</p>
+    <form data-resolve="submission">
+      <label for="resolve_task_id">見つかった外部タスクID<span class="hint">ひも付ける場合に入力します。</span></label>
+      <input id="resolve_task_id" name="provider_task_id" type="text">
+      <label for="resolve_evidence">証跡・メモ<span class="hint">必須。確認した画面や日時を書きます。</span></label>
+      <textarea id="resolve_evidence" name="evidence" required></textarea>
+      <div class="viewer-controls">
+        <button type="button" class="secondary" data-resolve-outcome="link">タスクをひも付ける</button>
+        <button type="button" class="secondary" data-resolve-outcome="not_created">未作成を確認した（枠を返す）</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if generation.tech_status == "validation_failed" %}
+  <div class="notice warn">
+    <p>取得した成果物が検査に通りませんでした。まず「保存だけ再試行」をお試しください。
+      再取得しても同じ場合は、運営として事業者側の失敗と確定できます（送信枠は返却されます）。</p>
+    <form data-resolve="artifact">
+      <label for="artifact_evidence">証跡・メモ<span class="hint">必須。</span></label>
+      <textarea id="artifact_evidence" name="evidence" required></textarea>
+      <p><button type="button" class="secondary" data-resolve-outcome="artifact">事業者側の失敗と確定する</button></p>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if generation.tech_status in ("provider_failed", "ready_for_review") %}
+  <div class="panel" style="background:#fbfbfd">
+    <h3 style="margin-top:0">再生成する（追加の課金が発生します）</h3>
+    <form data-retry>
+      <label for="retry_reason">理由と変更箇所<span class="hint">必須。前の結果は残り、新しい履歴として生成します。</span></label>
+      <textarea id="retry_reason" name="reason" required></textarea>
+      <p><button type="button" data-action="retry">再生成を依頼する</button></p>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="notice" data-action-result hidden></div>
   <details class="advanced">
     <summary>運営用の詳細（モデルID・プリセット）</summary>
     <dl class="kv">
@@ -170,4 +244,5 @@
 
 {% block scripts %}
 {% if artifact %}<script type="module" src="/static/viewer.js"></script>{% endif %}
+<script src="/static/generation.js"></script>
 {% endblock %}

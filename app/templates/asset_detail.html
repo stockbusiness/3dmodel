@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ asset.title or "題材" }}｜3Dアート品質検証{% endblock %}
+
 {% block content %}
 <p class="footnote"><a href="/experiments/{{ experiment.id }}">← {{ experiment.name }}</a></p>
 <h1>{{ asset.title or "（無題）" }}</h1>
@@ -72,19 +73,26 @@
     <form method="post" action="/generations">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="variant_id" value="{{ variant.id }}">
+      {# 冪等キーはサーバーが発行する。連打しても依頼は1件になる（仕様第6.3章） #}
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
       <label for="preset_{{ variant.id }}">プリセット</label>
       <select id="preset_{{ variant.id }}" name="preset_id" required>
         {% for item in presets %}
           <option value="{{ item.preset.id }}"{% if item.reasons %} disabled{% endif %}>
-            {{ item.preset.display_name }}{% if item.reasons %}（{{ item.reasons | join("／") }}）{% endif %}
+            {{ item.preset.display_name }}
+            ｜見積 {{ item.estimate_label }}
+            ｜送信枠 {{ item.quota.used }}/{{ item.quota.limit }}
+            {%- if item.reasons %}（{{ item.reasons | join("／") }}）{% endif %}
           </option>
         {% endfor %}
       </select>
       <p class="footnote">
-        概算費用：{{ presets[0].estimate_label if presets else "—" }}。
+        セットの上限額：{{ experiment.cost_cap_micro_usd | usd }}／
+        送信済み見積の累計：{{ cap_state.committed_micro_usd | usd }}
+        {%- if cap_state.remaining_micro_usd is not none %}／残り：{{ cap_state.remaining_micro_usd | usd }}{% endif %}。
         {% if asset.consent_status == "missing" %}利用同意が未取得のため、実API生成は選べません。{% endif %}
       </p>
-      <p><button type="submit">生成する</button></p>
+      <p><button type="submit" data-submit-once>生成する</button></p>
     </form>
 
     <details class="advanced">
@@ -145,4 +153,8 @@
   </table>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/forms.js"></script>
 {% endblock %}

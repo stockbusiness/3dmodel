@@ -20,8 +20,8 @@ from app.models.enums import (
     SUBJECT_TAGS,
     VERDICTS,
 )
-from app.providers.registry import get_adapter
-from app.services import audit
+from app.providers.registry import get_adapter, is_mock
+from app.services import audit, cost_guard, quota
 from app.services.image_intake import ImageRejected, inspect_and_store
 from app.services.presets import selectable_reasons
 from app.services.review_aggregate import format_micro_usd, latest_reviews
@@ -258,23 +258,47 @@ def asset_detail_page(
         variant.edit_type_labels = [EDIT_TYPES.get(t, t) for t in types]  # type: ignore[attr-defined]
         variants.append(variant)
 
+    cap_state = cost_guard.experiment_state(db, experiment)
     presets = []
     for preset in db.scalars(select(Preset).order_by(Preset.code.asc())).all():
         reasons = selectable_reasons(preset, live=experiment.is_live)
         if experiment.is_live and asset.consent_status == "missing":
             reasons.append("利用同意が未取得です")
-        if not experiment.is_live and preset.provider != "mock":
+        if not experiment.is_live and not is_mock(preset.provider):
             reasons.append("モックのセットでは選べません")
-        estimate_label = "—"
+        if experiment.is_live and is_mock(preset.provider):
+            reasons.append("実APIのセットでは選べません")
+
+        estimate_micro_usd = 0
         try:
             adapter = get_adapter(preset.provider)
             if variants:
-                estimate_label = format_micro_usd(
-                    adapter.estimate(variants[0], preset).max_micro_usd
-                )
+                estimate_micro_usd = adapter.estimate(variants[0], preset).max_micro_usd
         except KeyError:
             reasons.append("アダプター未実装（A3で追加）")
-        presets.append({"preset": preset, "reasons": reasons, "estimate_label": estimate_label})
+
+        quota_state = quota.state(
+            db,
+            experiment_id=experiment.id,
+            asset_id=asset.id,
+            provider=preset.provider,
+        )
+        if quota_state.remaining < 1:
+            reasons.append(f"送信枠が残っていません（{quota_state.used}/{quota_state.limit}）")
+        if (
+            cap_state.remaining_micro_usd is not None
+            and estimate_micro_usd > cap_state.remaining_micro_usd
+        ):
+            reasons.append("上限額を超えます")
+
+        presets.append(
+            {
+                "preset": preset,
+                "reasons": reasons,
+                "estimate_label": format_micro_usd(estimate_micro_usd),
+                "quota": quota_state,
+            }
+        )
 
     generations = db.scalars(
         select(Generation)
@@ -302,6 +326,7 @@ def asset_detail_page(
             "variants": variants,
             "presets": presets,
             "generations": generation_rows,
+            "cap_state": cap_state,
         },
     )
 

@@ -23,6 +23,31 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
+
+
+class UtcDateTime(TypeDecorator):
+    """タイムゾーン付きUTCで出し入れする日時型。
+
+    SQLite は日時にタイムゾーンを保存しないため、素の DateTime では
+    読み出したときに naive な値になり、aware な値と比較・減算できない。
+    書き込み時にUTCへ正規化し、読み出し時にUTCを付け直す（ASSUMPTION A-24）。
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect):
+        if value is None:
+            return None
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def new_id() -> str:
@@ -38,9 +63,7 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utcnow, nullable=False)
 
 
 class Operator(Base, TimestampMixin):
@@ -70,8 +93,8 @@ class OperatorSession(Base, TimestampMixin):
         String(36), ForeignKey("operators.id", ondelete="CASCADE"), nullable=False
     )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     operator: Mapped[Operator] = relationship()
 
@@ -222,7 +245,7 @@ class Comparison(Base, TimestampMixin):
     )
     purpose: Mapped[str] = mapped_column(String(32), default="benchmark", nullable=False)
     is_blind: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    revealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revealed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     revealed_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("operators.id"))
     created_by: Mapped[str] = mapped_column(String(36), ForeignKey("operators.id"), nullable=False)
 
@@ -257,16 +280,22 @@ class Generation(Base, TimestampMixin):
     error_note: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     provider_task_id: Mapped[str | None] = mapped_column(String(128))
+    # 事業者が示した成果物の参照。ダウンロード処理単位で使う（仕様第8章）
+    provider_result_ref: Mapped[str | None] = mapped_column(Text)
     progress_percent: Mapped[int | None] = mapped_column(Integer)
+    # 状態確認の間隔。初期10秒、最大60秒（仕様第8章）
+    poll_interval_seconds: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    # ローカルの中止要望。外部の取消成立とは区別する（仕様第8章）
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    next_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    last_checked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    next_check_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     # 仕様第8章：停止後の取得競合を防ぐ
     lease_owner: Mapped[str | None] = mapped_column(String(128))
-    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     # 送信枠を消費しているか（仕様第9章の返却ルール。フェーズBの利用枠へ引き継ぐ）
     consumes_quota: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -386,6 +415,31 @@ class IdempotencyRecord(Base, TimestampMixin):
     result_id: Mapped[str | None] = mapped_column(String(36))
 
     __table_args__ = (UniqueConstraint("operator_id", "operation", "key", name="uq_idempotency"),)
+
+
+class QuotaGrant(Base, TimestampMixin):
+    """送信枠の追加（仕様第9章）。
+
+    枠の初期値は検証セット内の asset×provider で 2 回。追加はここに1行ずつ積む。
+    理由の入力が必須で、監査ログにも残す。仕様第9章は保存場所を定めていないため、
+    (experiment, asset, provider) の組を持てる表を用意した（ASSUMPTION A-22）。
+    """
+
+    __tablename__ = "quota_grants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    experiment_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    asset_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    additional: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    granted_by: Mapped[str] = mapped_column(String(36), ForeignKey("operators.id"), nullable=False)
+
+    __table_args__ = (Index("ix_quota_grants_key", "experiment_id", "asset_id", "provider"),)
 
 
 class AuditEvent(Base, TimestampMixin):

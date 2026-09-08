@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from tests.conftest import CSRF_VALUE, create_experiment, mock_preset_id, upload_asset
+from tests.conftest import (
+    CSRF_VALUE,
+    create_and_run,
+    create_experiment,
+    drain_worker,
+    mock_preset_id,
+    request_generation,
+    upload_asset,
+)
 
 
 def test_login_required_redirects_html(client):
@@ -33,11 +41,8 @@ def test_full_mock_flow(auth_client, png_bytes):
     assert variant["submission_sha256"]
     assert variant["mime"] == "image/png"
 
-    response = auth_client.post(
-        "/api/generations",
-        json={"asset_variant_id": variant["id"], "preset_id": mock_preset_id(auth_client)},
-        headers={"x-csrf-token": CSRF_VALUE},
-    )
+    response = request_generation(auth_client, variant["id"], mock_preset_id(auth_client))
+    drain_worker()
     assert response.status_code == 202, response.text
     generation_id = response.json()["id"]
 
@@ -103,11 +108,7 @@ def test_defect_tag_blocks_pass(auth_client, png_bytes):
     experiment_id = create_experiment(auth_client)
     asset_id = upload_asset(auth_client, experiment_id, png_bytes)
     variant_id = auth_client.get(f"/api/assets/{asset_id}").json()["variants"][0]["id"]
-    generation_id = auth_client.post(
-        "/api/generations",
-        json={"asset_variant_id": variant_id, "preset_id": mock_preset_id(auth_client)},
-        headers={"x-csrf-token": CSRF_VALUE},
-    ).json()["id"]
+    generation_id = create_and_run(auth_client, variant_id, mock_preset_id(auth_client))
 
     review = auth_client.post(
         f"/api/generations/{generation_id}/reviews",
@@ -141,11 +142,7 @@ def test_pages_render(auth_client, png_bytes):
     experiment_id = create_experiment(auth_client)
     asset_id = upload_asset(auth_client, experiment_id, png_bytes)
     variant_id = auth_client.get(f"/api/assets/{asset_id}").json()["variants"][0]["id"]
-    generation_id = auth_client.post(
-        "/api/generations",
-        json={"asset_variant_id": variant_id, "preset_id": mock_preset_id(auth_client)},
-        headers={"x-csrf-token": CSRF_VALUE},
-    ).json()["id"]
+    generation_id = create_and_run(auth_client, variant_id, mock_preset_id(auth_client))
 
     for path in (
         "/",

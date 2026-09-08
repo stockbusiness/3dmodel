@@ -20,6 +20,7 @@ from app.models.enums import (
     TECH_STATUSES,
     VERDICTS,
 )
+from app.services.idempotency import issue_key
 from app.services.review_aggregate import format_micro_usd
 
 JST = timezone(timedelta(hours=9), "JST")
@@ -54,7 +55,14 @@ COMMON_CONTEXT: dict[str, Any] = {
 def render(request: Request, name: str, context: dict[str, Any], status_code: int = 200):
     """CSRFトークンをCookieとフォームの両方に載せて描画する。"""
     token = request.cookies.get(CSRF_COOKIE) or issue_csrf_token()
-    merged = {**COMMON_CONTEXT, "csrf_token": token, **context}
+    # 冪等キーはサーバーが画面描画時に発行してフォームに埋め込む（仕様第6.3章）。
+    # 画面を読み込み直すと新しいキーになり、同じフォームの再送は同じキーになる
+    merged = {
+        **COMMON_CONTEXT,
+        "csrf_token": token,
+        "idempotency_key": issue_key(),
+        **context,
+    }
     response = templates.TemplateResponse(request, name, merged, status_code=status_code)
     response.set_cookie(
         CSRF_COOKIE,

@@ -13,7 +13,10 @@ import pytest
 
 from tests.conftest import (
     CSRF_VALUE,
+    create_and_run,
     create_experiment,
+    drain_worker,
+    form_token,
     make_noise_png,
     make_png,
     mock_preset_id,
@@ -41,12 +44,8 @@ def test_unauthenticated_file_access_is_rejected(client, auth_client, png_bytes)
     experiment_id = create_experiment(auth_client)
     asset_id = upload_asset(auth_client, experiment_id, png_bytes)
     variant_id = auth_client.get(f"/api/assets/{asset_id}").json()["variants"][0]["id"]
-    generation = auth_client.post(
-        "/api/generations",
-        json={"asset_variant_id": variant_id, "preset_id": mock_preset_id(auth_client)},
-        headers={"x-csrf-token": CSRF_VALUE},
-    ).json()
-    artifact_id = auth_client.get(f"/api/generations/{generation['id']}").json()["artifact"]["id"]
+    generation_id = create_and_run(auth_client, variant_id, mock_preset_id(auth_client))
+    artifact_id = auth_client.get(f"/api/generations/{generation_id}").json()["artifact"]["id"]
 
     auth_client.cookies.clear()
     for url in (
@@ -102,9 +101,10 @@ def test_server_ignores_caller_supplied_urls_and_providers(auth_client, png_byte
             "provider": "tripo",
             "endpoint": "https://attacker.example/generate",
         },
-        headers={"x-csrf-token": CSRF_VALUE},
+        headers={"x-csrf-token": CSRF_VALUE, "Idempotency-Key": form_token(auth_client)},
     )
     assert response.status_code == 202
+    drain_worker()
     detail = auth_client.get(f"/api/generations/{response.json()['id']}").json()
     assert detail["provider"] == "mock"  # presetから確定。本文のproviderは無視される
 
@@ -186,13 +186,9 @@ def test_invalid_glb_from_provider_becomes_validation_failed(auth_client, png_by
     experiment_id = create_experiment(auth_client)
     asset_id = upload_asset(auth_client, experiment_id, png_bytes)
     variant_id = auth_client.get(f"/api/assets/{asset_id}").json()["variants"][0]["id"]
-    generation = auth_client.post(
-        "/api/generations",
-        json={"asset_variant_id": variant_id, "preset_id": mock_preset_id(auth_client)},
-        headers={"x-csrf-token": CSRF_VALUE},
-    ).json()
+    generation_id = create_and_run(auth_client, variant_id, mock_preset_id(auth_client))
 
-    detail = auth_client.get(f"/api/generations/{generation['id']}").json()
+    detail = auth_client.get(f"/api/generations/{generation_id}").json()
     assert detail["tech_status"] == "validation_failed"
     assert detail["artifact"] is None
 

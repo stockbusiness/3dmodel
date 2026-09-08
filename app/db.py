@@ -66,13 +66,24 @@ def reset_engine() -> None:
     _session_factory = None
 
 
+_IMMEDIATE_FLAG = "art3d_immediate"
+
+
 def begin_immediate(session: Session) -> None:
     """書込トランザクションを即座に取得する（仕様第8章）。
 
-    A2 の claim で使う。呼ぶ側は、このあとネットワーク通信をしないこと。
+    SQLite の既定は遅延トランザクションで、読み取りから書き込みへ昇格するときに
+    別の書き手がいると即座に SQLITE_BUSY になる（busy timeout では待てない）。
+    受付や claim のように「読んで判定して書く」処理は、最初から書込ロックを取る。
+
+    呼ぶ側は、このあとネットワーク通信をしないこと。
+    同じセッションで複数回呼ばれても、最初の1回だけ効く。
     """
+    if session.info.get(_IMMEDIATE_FLAG):
+        return
     session.execute(text("COMMIT"))
     session.execute(text("BEGIN IMMEDIATE"))
+    session.info[_IMMEDIATE_FLAG] = True
 
 
 @contextmanager
@@ -85,6 +96,7 @@ def session_scope() -> Iterator[Session]:
         session.rollback()
         raise
     finally:
+        session.info.pop(_IMMEDIATE_FLAG, None)
         session.close()
 
 

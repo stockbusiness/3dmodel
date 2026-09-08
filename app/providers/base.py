@@ -13,13 +13,35 @@ from typing import Any
 
 from app.models import AssetVariant, Preset
 
+# error_kind の正規化した値。画面表示と集計に使う
+ERROR_TIMEOUT = "submit_timeout"
+ERROR_RATE_LIMITED = "rate_limited"
+ERROR_PROVIDER_FAILED = "provider_failed"
+ERROR_DOWNLOAD_FAILED = "download_failed"
+ERROR_VALIDATION_FAILED = "validation_failed"
+ERROR_TRANSPORT = "transport_error"
+
 
 class ProviderError(Exception):
-    """事業者側または通信の失敗。error_kind に正規化した種別を持つ。"""
+    """事業者側または通信の失敗。kind に正規化した種別を持つ。"""
 
-    def __init__(self, message: str, *, kind: str = "provider_error") -> None:
+    def __init__(
+        self, message: str, *, kind: str = ERROR_PROVIDER_FAILED, retry_after: int | None = None
+    ) -> None:
         super().__init__(message)
         self.kind = kind
+        # 429 の Retry-After（秒）。あればバックオフに反映する（仕様第8章）
+        self.retry_after = retry_after
+
+
+class SubmitTimeout(ProviderError):
+    """送信の応答が得られなかった。自動で再POSTしない（仕様第8章）。
+
+    課金されたかどうかを断定できないため、呼び出し側は submission_unknown にする。
+    """
+
+    def __init__(self, message: str = "送信の応答がありませんでした") -> None:
+        super().__init__(message, kind=ERROR_TIMEOUT)
 
 
 class UnsupportedOperation(Exception):
@@ -67,12 +89,21 @@ class DownloadedResult:
 
 class ProviderAdapter(ABC):
     name: str = "base"
+    # 公式APIが取消に対応しているか（仕様第8章）
+    supports_cancel: bool = False
 
     @abstractmethod
     def estimate(self, variant: AssetVariant, preset: Preset) -> Estimate: ...
 
     @abstractmethod
-    def submit(self, variant: AssetVariant, preset: Preset) -> SubmitResult: ...
+    def submit(
+        self, variant: AssetVariant, preset: Preset, *, client_reference: str
+    ) -> SubmitResult:
+        """外部へ依頼を出す。
+
+        client_reference は自システムの生成ID。事業者の履歴と照合するときに使う
+        （仕様第8章：受付結果不明の手動照合）。
+        """
 
     @abstractmethod
     def fetch_status(self, provider_task_id: str) -> StatusResult: ...
