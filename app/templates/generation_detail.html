@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block title %}生成結果｜3Dアート品質検証{% endblock %}
+{% block content %}
+<p class="footnote"><a href="/assets/{{ asset.id }}">← {{ asset.title or "題材" }}</a></p>
+<h1>生成結果
+  {% if generation.is_live %}<span class="badge live">実API</span>{% else %}<span class="badge mock">モック</span>{% endif %}
+</h1>
+
+<div class="panel" data-generation-id="{{ generation.id }}" data-in-progress="{{ 1 if in_progress else 0 }}">
+  <p>
+    <span class="badge" data-status-badge>{{ tech_statuses.get(generation.tech_status, generation.tech_status) }}</span>
+    <span class="footnote" data-status-note>{{ status_explanation }}</span>
+  </p>
+  <dl class="kv">
+    <dt>サービス</dt><dd>{{ generation.provider }}</dd>
+    <dt>試行回数</dt><dd>{{ generation.attempt_index }}{% if generation.parent_id %}（再生成）{% endif %}</dd>
+    <dt>受付日時</dt><dd>{{ generation.created_at | jst }}</dd>
+    <dt>受付からの経過</dt><dd data-elapsed>{{ elapsed_label }}</dd>
+    <dt>最終確認</dt><dd data-last-checked>{{ generation.last_checked_at | jst }}</dd>
+    <dt>進捗</dt>
+    <dd data-progress>
+      {%- if generation.progress_percent is not none %}{{ generation.progress_percent }}%
+      {%- else %}事業者が進捗を返さないため、段階のみ表示しています{% endif %}
+    </dd>
+    <dt>完了日時</dt><dd>{{ generation.completed_at | jst }}</dd>
+    <dt>送信枠</dt><dd>{{ "消費している" if generation.consumes_quota else "返却済み" }}</dd>
+    <dt>生成ID</dt><dd class="mono">{{ generation.id }}</dd>
+  </dl>
+  {% if generation.error_note %}
+    <div class="notice {{ 'danger' if generation.tech_status == 'provider_failed' else 'warn' }}">
+      {{ generation.error_note }}
+    </div>
+  {% endif %}
+
+  <h3>この状態でできること</h3>
+  <p class="footnote">
+    <strong>追加の課金が発生するのは「再生成」だけです。</strong>
+    「状態を再確認」と「保存だけ再試行」は、すでにある同じタスクを見に行くだけで、
+    外部へ新しい生成を依頼しません。
+  </p>
+  <div class="viewer-controls">
+    {% if generation.tech_status in ("running", "monitoring_paused") %}
+      <button type="button" class="secondary" data-action="refresh">状態を再確認する（課金なし）</button>
+    {% endif %}
+    {% if generation.tech_status in ("download_failed", "validation_failed") %}
+      <button type="button" class="secondary" data-action="retry-download">保存だけ再試行する（課金なし）</button>
+    {% endif %}
+    {% if generation.tech_status not in ("ready_for_review", "cancelled") %}
+      <button type="button" class="secondary" data-action="cancel">中止を要望する</button>
+    {% endif %}
+  </div>
+
+  {% if generation.tech_status == "submission_unknown" %}
+  <div class="notice warn">
+    <p><strong>受付結果が分かりません。</strong>
+      事業者側にタスクが作られたかどうかを断定できないため、自動での再送信は行いません。
+      事業者の管理画面で履歴を確認し、下のいずれかを記録してください。</p>
+    <form data-resolve="submission">
+      <label for="resolve_task_id">見つかった外部タスクID<span class="hint">ひも付ける場合に入力します。</span></label>
+      <input id="resolve_task_id" name="provider_task_id" type="text">
+      <label for="resolve_evidence">証跡・メモ<span class="hint">必須。確認した画面や日時を書きます。</span></label>
+      <textarea id="resolve_evidence" name="evidence" required></textarea>
+      <div class="viewer-controls">
+        <button type="button" class="secondary" data-resolve-outcome="link">タスクをひも付ける</button>
+        <button type="button" class="secondary" data-resolve-outcome="not_created">未作成を確認した（枠を返す）</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if generation.tech_status == "validation_failed" %}
+  <div class="notice warn">
+    <p>取得した成果物が検査に通りませんでした。まず「保存だけ再試行」をお試しください。
+      再取得しても同じ場合は、運営として事業者側の失敗と確定できます（送信枠は返却されます）。</p>
+    <form data-resolve="artifact">
+      <label for="artifact_evidence">証跡・メモ<span class="hint">必須。</span></label>
+      <textarea id="artifact_evidence" name="evidence" required></textarea>
+      <p><button type="button" class="secondary" data-resolve-outcome="artifact">事業者側の失敗と確定する</button></p>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if generation.tech_status in ("provider_failed", "ready_for_review") %}
+  <div class="panel" style="background:#fbfbfd">
+    <h3 style="margin-top:0">再生成する（追加の課金が発生します）</h3>
+    <form data-retry>
+      <label for="retry_reason">理由と変更箇所<span class="hint">必須。前の結果は残り、新しい履歴として生成します。</span></label>
+      <textarea id="retry_reason" name="reason" required></textarea>
+      <p><button type="button" data-action="retry">再生成を依頼する</button></p>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="notice" data-action-result hidden></div>
+  <details class="advanced">
+    <summary>運営用の詳細（モデルID・プリセット）</summary>
+    <dl class="kv">
+      <dt>プリセット</dt><dd>{{ snapshot.get("display_name", "—") }}（{{ snapshot.get("code", "—") }}）</dd>
+      <dt>モデルID</dt><dd class="mono">{{ snapshot.get("model_id") or "—" }}</dd>
+      <dt>プリセット版</dt><dd>{{ snapshot.get("version", "—") }}</dd>
+      <dt>外部タスクID</dt><dd class="mono">{{ generation.provider_task_id or "—" }}</dd>
+    </dl>
+  </details>
+</div>
+
+<div class="grid two">
+  <div class="panel">
+    <h3 style="margin-top:0">元画像</h3>
+    <img class="thumb" src="/api/files/{{ variant.id }}?kind=variant" alt="元画像">
+    <p class="footnote">{{ variant.width }} × {{ variant.height }} px</p>
+  </div>
+
+  <div class="panel" data-viewer-host>
+    <h3 style="margin-top:0">生成モデル</h3>
+    {% if artifact %}
+      <model-viewer
+        src="/api/files/{{ artifact.id }}?kind=artifact"
+        alt="生成された3Dモデル"
+        camera-controls
+        touch-action="pan-y"
+        loading="eager"
+        data-base-orbit="0deg 75deg auto"
+        camera-orbit="0deg 75deg auto"
+        shadow-intensity="0.6"
+        exposure="1"></model-viewer>
+      <div class="viewer-status notice" data-viewer-status hidden></div>
+      <div class="viewer-controls">
+        <button type="button" class="secondary" data-orbit="0deg 75deg auto">正面</button>
+        <button type="button" class="secondary" data-orbit="90deg 75deg auto">横</button>
+        <button type="button" class="secondary" data-orbit="180deg 75deg auto">背面</button>
+        <button type="button" class="secondary" data-orbit="0deg 5deg auto">真上</button>
+        <button type="button" class="secondary" data-viewer-reset>表示をリセット</button>
+      </div>
+      <div class="viewer-controls">
+        <button type="button" class="secondary" data-bg="#eceef2">背景：明</button>
+        <button type="button" class="secondary" data-bg="#3a3d45">背景：暗</button>
+        <button type="button" class="secondary" data-bg="#ffffff">背景：白</button>
+      </div>
+      <p class="footnote">
+        正面は生成側の向きと一致するとは限りません。基準角度の調整は A4 で追加します。
+        表示の不具合は生成のやり直しではありません。追加の有料生成は自動実行しません。
+      </p>
+      <details class="advanced">
+        <summary>形状メトリクス（記録用。品質判定には使いません）</summary>
+        <dl class="kv">
+          <dt>頂点数</dt><dd>{{ metrics.get("vertex_count") if metrics.get("vertex_count") is not none else "未取得" }}</dd>
+          <dt>三角形数</dt><dd>{{ metrics.get("triangle_count") if metrics.get("triangle_count") is not none else "未取得" }}</dd>
+          <dt>メッシュ数</dt><dd>{{ metrics.get("mesh_count") if metrics.get("mesh_count") is not none else "未取得" }}</dd>
+          <dt>マテリアル数</dt><dd>{{ metrics.get("material_count") if metrics.get("material_count") is not none else "未取得" }}</dd>
+          <dt>テクスチャ枚数</dt><dd>{{ metrics.get("texture_count") if metrics.get("texture_count") is not none else "未取得" }}</dd>
+          <dt>テクスチャ解像度</dt><dd>{{ metrics.get("texture_resolutions") | join("、") or "—" }}</dd>
+          <dt>バウンディングボックス</dt><dd class="mono">{{ metrics.get("bounding_box") or "未取得" }}</dd>
+          <dt>ファイル容量</dt><dd>{{ artifact.bytes }} バイト</dd>
+        </dl>
+      </details>
+    {% else %}
+      <p>まだ表示できるモデルがありません（技術状態：{{ tech_statuses.get(generation.tech_status, generation.tech_status) }}）。</p>
+    {% endif %}
+  </div>
+</div>
+
+<h2>品質評価</h2>
+<div class="panel">
+  {% if not artifact %}
+    <p>モデルが保存されてから評価できます。</p>
+  {% else %}
+  {% if latest_review %}
+    <div class="notice ok">
+      直近の評価：{{ verdicts.get(latest_review.verdict, latest_review.verdict) }}（改訂 {{ latest_review.revision }}、{{ latest_review.created_at | jst }}）
+      {% if pass_blockers %}
+        <br>教室利用合格になっていない理由：{{ pass_blockers | join("／") }}
+      {% endif %}
+    </div>
+  {% endif %}
+  <p class="footnote">
+    合格は5軸すべて4以上かつ重大不具合なしです。スマホ表示が未確認のあいだは合格を付けられません。
+    APIの成功と品質合格は別のものです。
+  </p>
+  <form method="post" action="/generations/{{ generation.id }}/reviews">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for field, label in review_axes.items() %}
+      {% if field != "score_mobile" %}
+      <label for="{{ field }}">{{ label }}<span class="hint">1：使えない ／ 2：大きな修正が必要 ／ 3：不満が残る ／ 4：体験に使える ／ 5：非常に良い</span></label>
+      <select id="{{ field }}" name="{{ field }}" required>
+        {% for n in [1,2,3,4,5] %}<option value="{{ n }}"{% if latest_review and latest_review[field] == n %} selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+      {% endif %}
+    {% endfor %}
+
+    <label for="mobile_checked_wrap">スマホ表示操作性</label>
+    <div class="checks" id="mobile_checked_wrap">
+      <label for="mobile_checked"><input id="mobile_checked" type="checkbox" name="mobile_checked" value="1"{% if latest_review and latest_review.mobile_checked %} checked{% endif %}> 実機で確認した</label>
+    </div>
+    <select id="score_mobile" name="score_mobile">
+      <option value="">未確認</option>
+      {% for n in [1,2,3,4,5] %}<option value="{{ n }}"{% if latest_review and latest_review.score_mobile == n %} selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select>
+
+    <label>重大不具合タグ</label>
+    <div class="checks">
+      {% for value, label in defect_tags.items() %}
+        <label for="defect_{{ value }}"><input id="defect_{{ value }}" type="checkbox" name="defect_tags" value="{{ value }}"{% if value in latest_defect_tags %} checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+    </div>
+
+    <label for="verdict">判定</label>
+    <select id="verdict" name="verdict" required>
+      {% for value, label in verdicts.items() %}
+        {% if value != "unreviewed" %}
+        <option value="{{ value }}"{% if latest_review and latest_review.verdict == value %} selected{% endif %}>{{ label }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+
+    <label for="work_seconds">作業秒<span class="hint">生成の待ち時間ではなく、講師が実際に手を動かした時間です。</span></label>
+    <input id="work_seconds" name="work_seconds" type="number" min="0" step="1" inputmode="numeric" value="{{ latest_review.work_seconds if latest_review else 0 }}">
+
+    <label for="comment">コメント</label>
+    <textarea id="comment" name="comment">{{ latest_review.comment if latest_review else "" }}</textarea>
+
+    <p><button type="submit">{{ "評価を改訂する" if latest_review else "評価を登録する" }}</button></p>
+  </form>
+  {% endif %}
+</div>
+
+{% if reviews | length > 1 %}
+<h2>評価の履歴</h2>
+<div class="panel table-scroll">
+  <table>
+    <thead><tr><th>日時</th><th>改訂</th><th>判定</th><th>作業秒</th><th>コメント</th></tr></thead>
+    <tbody>
+      {% for review in reviews %}
+      <tr>
+        <td>{{ review.created_at | jst }}</td><td>{{ review.revision }}</td>
+        <td>{{ verdicts.get(review.verdict, review.verdict) }}</td>
+        <td>{{ review.work_seconds }}</td><td>{{ review.comment }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if artifact %}<script type="module" src="/static/viewer.js"></script>{% endif %}
+<script src="/static/generation.js"></script>
+{% endblock %}

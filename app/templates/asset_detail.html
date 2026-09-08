@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.title or "題材" }}｜3Dアート品質検証{% endblock %}
+
+{% block content %}
+<p class="footnote"><a href="/experiments/{{ experiment.id }}">← {{ experiment.name }}</a></p>
+<h1>{{ asset.title or "（無題）" }}</h1>
+
+<div class="panel">
+  <dl class="kv">
+    <dt>題材タグ</dt><dd>{{ subject_tags.get(asset.subject_tag, asset.subject_tag) }}</dd>
+    <dt>出所分類</dt><dd>{{ source_classes.get(asset.source_class, asset.source_class) }}</dd>
+    <dt>利用同意</dt>
+    <dd>
+      {% if asset.consent_status == "missing" %}<span class="badge warn">未取得</span>
+      {% else %}<span class="badge ok">{{ consent_statuses.get(asset.consent_status) }}</span>{% endif %}
+      {% if asset.consent_obtained_on %}<span class="footnote">（取得日 {{ asset.consent_obtained_on }}）</span>{% endif %}
+    </dd>
+    <dt>題材ID</dt><dd class="mono">{{ asset.id }}</dd>
+  </dl>
+  {% if asset.consent_status == "missing" %}
+  <div class="notice warn">
+    利用同意が未取得です。この題材の画像は外部の生成サービスへ送信できません。
+    同意を取得したら下のフォームで更新してください。
+  </div>
+  {% endif %}
+</div>
+
+<h2>利用同意を更新する</h2>
+<div class="panel">
+  <form method="post" action="/assets/{{ asset.id }}/consent">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="consent_status2">同意の状態</label>
+    <select id="consent_status2" name="consent_status" required>
+      {% for value, label in consent_statuses.items() %}
+        <option value="{{ value }}"{% if value == asset.consent_status %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label for="consent_obtained_on2">取得日</label>
+    <input id="consent_obtained_on2" name="consent_obtained_on" type="date" value="{{ asset.consent_obtained_on or '' }}">
+    <label for="consent_scope_note2">範囲メモ</label>
+    <textarea id="consent_scope_note2" name="consent_scope_note">{{ asset.consent_scope_note }}</textarea>
+    <label for="reason">変更理由<span class="hint">監査ログに残します。</span></label>
+    <input id="reason" name="reason" type="text" required>
+    <p><button type="submit">更新する</button></p>
+  </form>
+</div>
+
+<h2>画像</h2>
+{% for variant in variants %}
+<div class="panel grid two">
+  <div>
+    <img class="thumb" src="/api/files/{{ variant.id }}?kind=variant" alt="{{ '原画像' if variant.kind == 'original' else '加工版' }}">
+  </div>
+  <div>
+    <h3 style="margin-top:0">
+      {% if variant.kind == "original" %}原画像{% else %}加工版{% endif %}
+    </h3>
+    <dl class="kv">
+      <dt>画像ID</dt><dd class="mono">{{ variant.id }}</dd>
+      <dt>寸法</dt><dd>{{ variant.width }} × {{ variant.height }} px</dd>
+      <dt>形式</dt><dd>{{ variant.mime }}</dd>
+      <dt>容量</dt><dd>{{ variant.bytes }} バイト</dd>
+      <dt>SHA256</dt><dd class="mono">{{ variant.sha256 }}</dd>
+      <dt>送信用hash</dt><dd class="mono">{{ variant.submission_sha256 or "—" }}</dd>
+      {% if variant.kind == "processed" %}
+      <dt>加工種別</dt><dd>{{ variant.edit_type_labels | join("・") or "—" }}</dd>
+      <dt>加工ツール</dt><dd>{{ variant.edit_tool or "—" }}</dd>
+      <dt>加工メモ</dt><dd>{{ variant.edit_note or "—" }}</dd>
+      {% endif %}
+    </dl>
+
+    <h3>この画像で生成する</h3>
+    <form method="post" action="/generations">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="variant_id" value="{{ variant.id }}">
+      {# 冪等キーはサーバーが発行する。連打しても依頼は1件になる（仕様第6.3章） #}
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      <label for="preset_{{ variant.id }}">プリセット</label>
+      <select id="preset_{{ variant.id }}" name="preset_id" required>
+        {% for item in presets %}
+          <option value="{{ item.preset.id }}"{% if item.reasons %} disabled{% endif %}>
+            {{ item.preset.display_name }}
+            ｜見積 {{ item.estimate_label }}
+            ｜送信枠 {{ item.quota.used }}/{{ item.quota.limit }}
+            {%- if item.reasons %}（{{ item.reasons | join("／") }}）{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <p class="footnote">
+        セットの上限額：{{ experiment.cost_cap_micro_usd | usd }}／
+        送信済み見積の累計：{{ cap_state.committed_micro_usd | usd }}
+        {%- if cap_state.remaining_micro_usd is not none %}／残り：{{ cap_state.remaining_micro_usd | usd }}{% endif %}。
+        {% if asset.consent_status == "missing" %}利用同意が未取得のため、実API生成は選べません。{% endif %}
+      </p>
+      <p><button type="submit" data-submit-once>生成する</button></p>
+    </form>
+
+    <details class="advanced">
+      <summary>運営用の詳細</summary>
+      <dl class="kv">
+        <dt>保存キー</dt><dd class="mono">{{ variant.storage_key }}</dd>
+        <dt>親画像</dt><dd class="mono">{{ variant.parent_variant_id or "—" }}</dd>
+      </dl>
+    </details>
+  </div>
+</div>
+{% endfor %}
+
+<h2>加工版を追加する</h2>
+<div class="panel">
+  <p class="footnote">原画像は上書きされません。加工は外部ツールで行い、結果をここへ登録します。</p>
+  <form method="post" action="/assets/{{ asset.id }}/variants" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="vfile">加工済み画像</label>
+    <input id="vfile" name="file" type="file" accept="image/png,image/jpeg,image/webp" required>
+
+    <label>加工種別<span class="hint">当てはまるものをすべて選びます。</span></label>
+    <div class="checks">
+      {% for value, label in edit_types.items() %}
+        <label for="edit_{{ value }}"><input id="edit_{{ value }}" type="checkbox" name="edit_types" value="{{ value }}"> {{ label }}</label>
+      {% endfor %}
+    </div>
+
+    <label for="edit_tool">加工ツール名</label>
+    <input id="edit_tool" name="edit_tool" type="text" maxlength="100">
+
+    <label for="edit_note">加工メモ</label>
+    <textarea id="edit_note" name="edit_note"></textarea>
+
+    <p><button type="submit">追加する</button></p>
+  </form>
+</div>
+
+<h2>生成履歴</h2>
+{% if not generations %}
+  <div class="panel"><p>まだ生成していません。</p></div>
+{% else %}
+<div class="panel table-scroll">
+  <table>
+    <thead><tr><th>受付日時</th><th>サービス</th><th>試行</th><th>技術状態</th><th>判定</th><th></th></tr></thead>
+    <tbody>
+      {% for row in generations %}
+      <tr>
+        <td>{{ row.generation.created_at | jst }}</td>
+        <td>{{ row.generation.provider }}</td>
+        <td>{{ row.generation.attempt_index }}</td>
+        <td>{{ tech_statuses.get(row.generation.tech_status, row.generation.tech_status) }}</td>
+        <td>{{ row.verdict_label }}</td>
+        <td><a class="button secondary" href="/generations/{{ row.generation.id }}">開く</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/forms.js"></script>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}ログイン｜3Dアート品質検証{% endblock %}
+{% block content %}
+<h1>ログイン</h1>
+<div class="panel" style="max-width:480px">
+  <p class="footnote">運営・講師の内部利用者のみが使用します。アカウントはCLIで作成します。</p>
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="login_name">ログイン名</label>
+    <input id="login_name" name="login_name" type="text" autocomplete="username" required>
+    <label for="password">パスワード</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <p><button type="submit">ログイン</button></p>
+  </form>
+</div>
+{% endblock %}

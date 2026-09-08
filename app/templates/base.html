@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}3Dアート品質検証{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.png" type="image/png">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="site">
+  <div class="inner">
+    <div class="title"><a href="/" style="text-decoration:none;color:inherit">3Dアート品質検証システム</a></div>
+    <nav>
+      {% if operator %}
+        <a href="/">検証セット一覧</a>
+        <span class="footnote">{{ operator.display_name }} でログイン中</span>
+        <form method="post" action="/logout" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="secondary" type="submit">ログアウト</button>
+        </form>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+<main>
+  {% if error %}<div class="notice danger" role="alert">{{ error }}</div>{% endif %}
+  {% if message %}<div class="notice ok">{{ message }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>
