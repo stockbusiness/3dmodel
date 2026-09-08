@@ -14,7 +14,7 @@
 
 - `https://developers.tripo3d.ai/en/pricing`
 - `https://docs.meshy.ai/en/api/image-to-3d`
-- `https://docs.meshy.ai/en/api/pricing`
+- `https://docs.meshy.ai/en/api/pricing`（実際に開けるのは `https://docs.meshy.ai/api/pricing`）
 - `https://help.meshy.ai/en/articles/9996860-how-to-use-meshy-image-to-3d`
 
 そのため、**事業者自身が配布している公式の実装**を一次資料として使った。
@@ -196,14 +196,44 @@ HDテクスチャ+10、HD形状+20）と一致することを確認した。
   課金の扱いも不明なため `cancel()` は `unsupported` を返す。
 - **ダウンロードは `download_guard` を通す。** `model_urls.glb` のURLを検査してから取得する。
 
-### 2.4 採用したプリセット
+### 2.4 価格（2026-09-08 一部確認）
+
+`https://docs.meshy.ai/api/pricing` の内容を利用者が確認した。
+
+**Image to 3D のクレジット数：**
+
+| モデル | テクスチャなし | テクスチャあり | 8Kテクスチャ |
+| --- | --- | --- | --- |
+| Meshy-6 | 20 | **30** | 35 |
+| Meshy-7 | 20 | **30** | 35（`ultra_mode` 有効時はさらに +5） |
+| Smart Topology（Meshy T2） | 5 | 15 | 20 |
+| その他 | 5 | 15 | — |
+
+**採用プリセット `meshy-standard` の1件あたりのクレジット数：30 credits**
+
+`model_type=standard`（＝ Meshy-7）、`should_texture=true`、`texture_resolution=4k`、
+`ultra_mode` は無効。8Kではないので 35 にはならず、`ultra_mode` の +5 も発生しない。
+
+Meshy-6 と Meshy-7 はどちらも「テクスチャあり 30 credits」で同額のため、
+サーバー側の既定モデルが 6 と 7 のどちらであっても 30 credits で変わらない。
+
+**確認できていないのは USD 単価である（U-3b は未解消）。**
+この価格ページはクレジット数だけを示しており、
+「購入は subscription settings ページから」とだけ書かれている。
+1クレジットあたりの USD 単価は別のページで確認する必要がある。
+
+仕様第11章のとおり、**Tripo と同じ単価（$0.01）を仮定しない**。
+単価が確認できるまで、このプリセットの見積額は設定しない。
+
+### 2.5 採用したプリセット
 
 | 項目 | 値 |
 | --- | --- |
 | code | `meshy-standard` |
 | model_id | `standard (meshy-7)`（Meshyは「モードがモデル」でモデル指定の項目が無い） |
 | settings | `model_type=standard, should_texture=true, enable_pbr=true, texture_resolution=4k, target_formats=["glb"]` |
-| 有効 | **無効**（価格未確認のため） |
+| 1件あたりのクレジット数 | **30 credits**（USD単価が未確認のため金額は未設定） |
+| 有効 | **無効**（クレジットのUSD単価とデータ取扱い条件が未確認のため） |
 
 `should_texture` の既定は false（テクスチャ無しの下書き）だが、
 教室での品質検証にはテクスチャ付きが必要なため true にした。
@@ -219,7 +249,7 @@ HDテクスチャ+10、HD形状+20）と一致することを確認した。
 | --- | --- | --- | --- |
 | ~~U-3a~~ | ~~Tripo：画像→3Dの1件あたりのクレジット数、オプションの加算、1クレジットのUSD単価~~ → **確認済み（2026-09-08）**：30 credits／$0.01 per credit ＝ **$0.30/件**。第1.4節を参照 | `https://developers.tripo3d.ai/en/pricing` | 解消 |
 | U-12 | Tripo：価格表の「H Series / P Series / Splat Series」のうち、`model_version = v2.5-20250123` がどれに当たるか。確認した 30 credits は H Series タブの値 | 価格ページの他タブ、または各シリーズの対象モデル一覧 | 3シリーズで Image to 3D の価格が同じなら影響しない。異なる場合は見積額の見直しが要る |
-| U-3b | Meshy：画像→3Dの1件あたりのクレジット数、`ultra_mode` / `should_texture` / テクスチャ解像度による差、クレジットのUSD単価 | `https://docs.meshy.ai/en/api/pricing` | 同上。**Tripoと同じ単価を仮定しない** |
+| U-3b | Meshy：**クレジットのUSD単価**。クレジット数（30 credits/件）は確認済み（第2.4節）だが、価格ページには購入単価が載っていない | `https://www.meshy.ai/settings/subscription` の購入画面、または Meshy の料金ページ | 上限額を見積もれないため実行不可。**Tripoと同じ単価を仮定しない**（仕様第11章） |
 | U-4a | 両社：送信した画像と生成物の保持期間 | 各社の規約 | 生徒作品を送る判断に必要 |
 | U-4b | 両社：学習利用の可否と opt-out の手段 | 各社の規約 | 同上 |
 | U-4c | 両社：生成物の利用条件（授業・販促での使用可否） | 各社の規約 | 教室採用の判断に必要 |
