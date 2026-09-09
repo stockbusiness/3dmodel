@@ -373,3 +373,26 @@ def test_compose_does_not_hardcode_any_secret():
     text = (Path(__file__).resolve().parents[1] / "compose.yaml").read_text()
     assert "tsk_" not in text
     assert "msy_" not in text
+
+
+# --- 設定 ------------------------------------------------------------------
+
+
+def test_the_example_secret_key_is_rejected(monkeypatch, tmp_path):
+    """`.env.example` の値のままでは起動させない（仕様第6.1章「固定値禁止」）。
+
+    `.env.example` を写しただけで動いてしまうと、セッションCookieの署名鍵が
+    公開の既知値のまま運用に入ってしまう。
+    """
+    import pytest
+
+    from app.config import EXAMPLE_SECRET_KEY, Settings
+
+    monkeypatch.setenv("APP_SECRET_KEY", EXAMPLE_SECRET_KEY)
+    monkeypatch.setenv("APP_DATA_DIR", str(tmp_path))
+    with pytest.raises(ValueError, match="例示値"):
+        Settings()
+
+    # 作り直した値なら通る
+    monkeypatch.setenv("APP_SECRET_KEY", "a-freshly-generated-key-long-enough-0123456789")
+    assert Settings().secret_key

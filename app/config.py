@@ -5,10 +5,13 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIB = 1024 * 1024
+
+# `.env.example` に置いてある例示用の値。そのままでは起動させない
+EXAMPLE_SECRET_KEY = "CHANGE_ME_dummy_secret_key_do_not_use_in_production"  # noqa: S105
 
 
 class Settings(BaseSettings):
@@ -72,6 +75,22 @@ class Settings(BaseSettings):
 
     # 一覧のポーリング間隔（仕様第6.4章：一覧は15〜30秒程度）
     list_poll_seconds: int = 20
+
+    @field_validator("secret_key")
+    @classmethod
+    def _reject_the_example_key(cls, value: str) -> str:
+        """`.env.example` の値のままでは起動させない（仕様第6.1章「固定値禁止」）。
+
+        セッションCookieの署名鍵なので、例示のままだとログイン状態を偽造できる。
+        `.env.example` を写しただけの状態を早い段階で止める。
+        """
+        if value.strip() == EXAMPLE_SECRET_KEY:
+            raise ValueError(
+                "APP_SECRET_KEY が .env.example の例示値のままです。"
+                "python -c \"import secrets; print(secrets.token_urlsafe(48))\" "
+                "で作り直して .env に入れてください"
+            )
+        return value
 
     @property
     def db_path(self) -> Path:

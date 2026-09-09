@@ -273,12 +273,13 @@ Pro（$20/月）以上の契約が要る。**
 
 | ID | 内容 | 影響 |
 | --- | --- | --- |
+| E-1b | `docker compose up`（web と worker の常駐起動）の実動作。ビルドは確認できたが、起動と巡回はまだ | 利用者の環境で確認する。A3.5 の実施で通る経路 |
 | E-2 | **開発サンドボックスから事業者のAPIへ接続できない**（2026-09-09 確認）。egress proxy が CONNECT に 403 を返す。`api.tripo3d.ai` / `api.meshy.ai` / `assets.meshy.ai` で確認した（事業者のWebサイトも同様） | **A3.5・A5 の実生成は、開発エージェント側では実行できない。** 運営の環境（手元のPC、またはVPS）で実行する。手順は `docs/early-check-plan.md`。端末だけで設定を確かめられるよう `python -m app.cli check-provider` を用意した |
 
 
 | ID | 内容 | 状況 |
 | --- | --- | --- |
-| E-1 | `docker compose build` と `docker compose up` の実動作 | 開発に使ったサンドボックスのネットワーク方針が、コンテナイメージの blob 配信元（`production.cloudfront.docker.com`、`pkg-containers.githubusercontent.com`）への接続を拒否するため、ベースイメージ `python:3.11-slim-bookworm` を取得できずビルドを実行できていない。Dockerfile と compose.yaml は記述済みで、依存の導入手順（`uv sync --frozen --no-install-project --no-dev`）はローカルで同じコマンドを実行して成功を確認した。**ユーザーの環境で `docker compose build` を一度実行して確認をお願いしたい。** |
+| ~~E-1~~ | ~~`docker compose build` の実動作~~ → **利用者の環境（Windows 11 + Docker Desktop）で成功を確認（2026-09-09）**。`art3d-validation:local` のビルドが 52.7 秒で完了した。`docker compose up` の実動作は引き続き未確認 | 開発に使ったサンドボックスのネットワーク方針が、コンテナイメージの blob 配信元（`production.cloudfront.docker.com`、`pkg-containers.githubusercontent.com`）への接続を拒否するため、ベースイメージ `python:3.11-slim-bookworm` を取得できずビルドを実行できていない。Dockerfile と compose.yaml は記述済みで、依存の導入手順（`uv sync --frozen --no-install-project --no-dev`）はローカルで同じコマンドを実行して成功を確認した。**ユーザーの環境で `docker compose build` を一度実行して確認をお願いしたい。** |
 | E-2 | 実機（iPhone Safari / Android Chrome）での表示 | 端末がないため未確認。ブラウザーのエミュレーションだけで実機合格とはしない（仕様第13章）。確認手順とチェックリストは `docs/quality-test-plan.md` にまとめた。限定公開環境（`deploy/`）に配置してから実施する |
 
 なお、画面と3D表示は Chromium（Playwright）で、PC幅（1280px）とスマホ幅（390px）の
