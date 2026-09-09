@@ -53,6 +53,63 @@ def init_db() -> None:
     )
 
 
+def check_provider(provider: str, connect: bool) -> None:
+    """事業者の設定を確認する（管理画面と同じ内容を端末で見るため）。
+
+    **APIキーの値は出さない。** 設定されているか、先頭が想定どおりかだけを示す。
+    `--connect` は認証が通るかだけを確かめる。**生成は行わないので課金は発生しない。**
+    """
+    from app.config import get_settings
+    from app.providers.base import ProviderError, UnsupportedOperation
+    from app.providers.registry import get_adapter
+    from app.services import provider_health
+
+    if provider not in provider_health.PROVIDER_KEYS:
+        known = "／".join(provider_health.REAL_PROVIDERS)
+        print(f"事業者が見つかりません: {provider}（指定できるのは {known}）", file=sys.stderr)
+        raise SystemExit(1)
+
+    print(f"[{provider}] 自己診断（外部通信なし）")
+    for item in provider_health.diagnose(provider):
+        mark = "注意" if item.is_warning else ("OK" if item.ok else "未 ")
+        print(f"  {mark}  {item.label}: {item.detail}")
+
+    reasons = provider_health.blocking_reasons(provider)
+    if reasons:
+        print("  → 実生成に進めません：" + "／".join(reasons))
+
+    if not connect:
+        print("  （認証を確かめるには --connect を付けてください）")
+        return
+
+    settings = get_settings()
+    if not settings.live_api_enabled:
+        print(
+            "\n実APIが無効です（APP_LIVE_API_ENABLED=false）。"
+            "接続テストは外部へ通信するため、有効にしてから実行してください。",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if reasons:
+        print("\n設定が足りないため接続テストを行いません。", file=sys.stderr)
+        raise SystemExit(1)
+
+    print("\n接続テスト（生成は行わないので課金は発生しません）")
+    try:
+        result = get_adapter(provider).check_connection()
+    except UnsupportedOperation as exc:
+        print(f"  未対応: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except ProviderError as exc:
+        # 事業者の応答原文は出さない（正規化済みの日本語だけ）
+        print(f"  失敗: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    print(f"  成功: {result.detail}")
+    if result.note:
+        print(f"  {result.note}")
+
+
 def create_operator(login_name: str, display_name: str, generate: bool) -> None:
     with session_scope() as db:
         if db.scalar(select(Operator).where(Operator.login_name == login_name)) is not None:
@@ -104,11 +161,25 @@ def main() -> None:
 
     sub.add_parser("seed-presets", help="プリセットを投入する（既存行は変更しない）")
 
+    check = sub.add_parser(
+        "check-provider",
+        help="事業者の設定を確認する。--connect を付けると認証だけ確かめる（課金なし）",
+    )
+    check.add_argument("provider", help="tripo または meshy")
+    check.add_argument(
+        "--connect",
+        action="store_true",
+        help="外部へ接続して認証を確かめる。生成は行わないので課金は発生しない。"
+        "APP_LIVE_API_ENABLED=true のときだけ実行できる",
+    )
+
     args = parser.parse_args()
     if args.command == "init-db":
         init_db()
     elif args.command == "create-operator":
         create_operator(args.login_name, args.display_name, args.generate_password)
+    elif args.command == "check-provider":
+        check_provider(args.provider, args.connect)
     elif args.command == "seed-presets":
         with session_scope() as db:
             created = seed_presets(db)

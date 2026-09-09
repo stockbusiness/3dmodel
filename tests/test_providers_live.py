@@ -412,6 +412,45 @@ def test_missing_download_host_does_not_block_submission(db_ready, monkeypatch):
         assert not any("配信ホスト" in reason for reason in reasons), reasons
 
 
+def test_download_failure_reason_reaches_the_screen_and_the_api(auth_client):
+    """保存失敗の理由が画面とAPIの両方に出ること。
+
+    配信ホストの確認（docs/early-check-plan.md 3.3）は、この文言を読む手順である。
+    読めなければ A3.5 が進まないため試験で守る。
+    """
+
+    from app.db import session_scope
+    from app.models import Generation
+    from tests.conftest import (
+        add_asset_directly,
+        create_and_run,
+        create_experiment,
+        preset_id,
+    )
+
+    experiment_id = create_experiment(auth_client)
+    variant_id = add_asset_directly(experiment_id)
+    generation_id = create_and_run(
+        auth_client, variant_id, preset_id(auth_client, "mock-download-failed")
+    )
+
+    with session_scope() as db:
+        generation = db.get(Generation, generation_id)
+        assert generation.tech_status == "download_failed"
+        note = generation.error_note
+        assert note
+
+    # API に出る（巡回で画面へ反映される経路）
+    body = auth_client.get(f"/api/generations/{generation_id}").json()
+    assert body["error_note"] == note
+
+    # 読み込み直したときにも出る
+    page = auth_client.get(f"/generations/{generation_id}")
+    assert page.status_code == 200
+    assert note in page.text
+    assert "data-error-note" in page.text
+
+
 def test_download_is_still_refused_and_names_the_host(settings_env):
     """未設定なら取得は拒否する。ただしどのホストを許可すべきかは分かるようにする。"""
     with pytest.raises(ProviderError) as excinfo:

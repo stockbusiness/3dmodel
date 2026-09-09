@@ -199,6 +199,18 @@ MESHY_API_KEY=msy_...
 
 `.env` はコミットしないでください。
 
+### 端末から確かめる
+
+画面を開かずに、同じ内容を端末で確認できます。
+
+```
+docker compose run --rm web python -m app.cli check-provider tripo
+docker compose run --rm web python -m app.cli check-provider tripo --connect
+```
+
+`--connect` を付けると認証まで確かめます（**課金は発生しません**）。
+どちらも **APIキーの値は表示しません。**
+
 ### 接続テスト
 
 認証が通るかだけを確かめます。**生成は行わないので課金は発生しません。**

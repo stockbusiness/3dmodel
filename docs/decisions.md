@@ -271,6 +271,11 @@ Pro（$20/月）以上の契約が要る。**
 
 ## 未確認（この環境の制約により検証できていないもの）
 
+| ID | 内容 | 影響 |
+| --- | --- | --- |
+| E-2 | **開発サンドボックスから事業者のAPIへ接続できない**（2026-09-09 確認）。egress proxy が CONNECT に 403 を返す。`api.tripo3d.ai` / `api.meshy.ai` / `assets.meshy.ai` で確認した（事業者のWebサイトも同様） | **A3.5・A5 の実生成は、開発エージェント側では実行できない。** 運営の環境（手元のPC、またはVPS）で実行する。手順は `docs/early-check-plan.md`。端末だけで設定を確かめられるよう `python -m app.cli check-provider` を用意した |
+
+
 | ID | 内容 | 状況 |
 | --- | --- | --- |
 | E-1 | `docker compose build` と `docker compose up` の実動作 | 開発に使ったサンドボックスのネットワーク方針が、コンテナイメージの blob 配信元（`production.cloudfront.docker.com`、`pkg-containers.githubusercontent.com`）への接続を拒否するため、ベースイメージ `python:3.11-slim-bookworm` を取得できずビルドを実行できていない。Dockerfile と compose.yaml は記述済みで、依存の導入手順（`uv sync --frozen --no-install-project --no-dev`）はローカルで同じコマンドを実行して成功を確認した。**ユーザーの環境で `docker compose build` を一度実行して確認をお願いしたい。** |
