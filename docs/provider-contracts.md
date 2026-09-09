@@ -470,6 +470,24 @@ Unity・Unreal・Blender で使うぶんには `mixamo` 仕様と FBX で足り�
 
 ---
 
+### 1.12 画像生成に関わるSDK機能（2026-09-09・**関数の存在のみ確認。価格は未確認**）
+
+利用者から「画像生成を本システムに取り込む」案が出た（`docs/decisions.md` T-21）。
+関連する関数が公式SDK 0.4.2 に**実在することをソースで確認した**。
+
+| 関数 | 引数 | 備考 |
+| --- | --- | --- |
+| `text_to_image` | `prompt`, `negative_prompt` | **`negative_prompt` があるため「背景・影・見切れ」を除外する固定文が書ける** |
+| `generate_image` | `prompt`, `model_version`, `file`, `files`, `template`, **`t_pose`**, **`sketch_to_render`** | **`t_pose` と `sketch_to_render` の挙動は型（bool）しか分からない**（U-34） |
+| `text_to_model` | `prompt`, `negative_prompt`, `image_seed`, ほか `image_to_model` と同じ3D引数 | **テキストから直接3D。** `image_seed` を持つことから内部で画像を作っている構造と**推測される（未確認）** |
+| `generate_multiview_image` | `image` | **1枚から多視点画像を作る** |
+
+**確認できたのは「関数が在ること」と「引数の並び」だけである。**
+**価格・品質・`template` の取りうる値・`t_pose` と `sketch_to_render` の実際の挙動は
+いずれも未確認で、実装していない**（U-33〜U-36）。
+
+---
+
 ---
 
 ## 2. Meshy
@@ -963,6 +981,10 @@ A3.5 の5題材には足りない**（第2.4.1節・規約第2.10条）。
 | U-30 | Tripo：**変換・リグ後の成果物の配信ホスト**が生成物と同じか（U-7 と同じ問題）。および変換後タスクの成果物の保持期間 | 実物のURL | 異なる場合は `APP_TRIPO_DOWNLOAD_HOSTS` に追加が要る |
 | U-31 | Tripo：**画像1枚から生成したメッシュが `rig_model` に耐えるか**。腕・脚が胴体に融合していればリグは失敗する見込み。`check_riggable` が事前に判定するが、**成功率と、どんな絵なら通るのか（T字ポーズが必要か）が未確認**。第1.11.2節を参照 | 実際に1件試す（`check_riggable` が無課金なら安価に確認できる可能性がある。それも未確認） | **アバター用途（`docs/decisions.md` T-18 案C）の成否を直接左右する**。置物用途なら不要 |
 | U-32 | Tripo：**`convert_model` の `export_orientation` と `scale_factor` が Unity の左手系 Y-up・1unit=1m にどう対応するか**。SDKに説明が無い | 実物をUnityに取り込んで確認 | 向きと大きさが合わないと配置のたびに手直しが要る。**Unity 側での確認が必要で、本システムの範囲外**（T-18） |
+| U-33 | Tripo：**`text_to_image` の1件あたりの価格**と、`negative_prompt` がどこまで効くか。第1.12節を参照 | 価格ページの他項目、または公式のAPIドキュメント | **画像生成を本システムに取り込む案の中心**（`docs/decisions.md` T-21）。3D生成より十分安くなければ「安い工程で絞る」設計が成り立たない |
+| U-34 | Tripo：**`generate_image` の `template` が取る値**、**`t_pose` と `sketch_to_render` の実際の挙動・品質・価格**。SDKの型は bool だが、何が起きるかの説明が無い | 同上 | **`sketch_to_render` は T-21 の推奨案（生徒が描く→整える）の中心機能**。`t_pose` はアバター用途（T-18 案C）のリグ成功率を左右する |
+| U-35 | Tripo：**`text_to_model` の価格**が `image_to_model` と同じか。`image_seed` を持つことから内部で画像を作っている構造と推測されるが**未確認** | 同上 | 同額なら画像工程を挟む意味は「確認できること」だけになる |
+| U-36 | Tripo：**`generate_multiview_image` の価格**と、出力が `multiview_to_model` にそのまま渡せるか | 同上 | 1枚から多視点を作れれば U-26（多視点入力）の問題を裏返しに解決できる |
 
 ### 確認できたら行うこと
 
