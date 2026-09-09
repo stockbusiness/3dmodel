@@ -396,3 +396,34 @@ def test_the_example_secret_key_is_rejected(monkeypatch, tmp_path):
     # 作り直した値なら通る
     monkeypatch.setenv("APP_SECRET_KEY", "a-freshly-generated-key-long-enough-0123456789")
     assert Settings().secret_key
+
+
+def test_cli_explains_a_bad_setting_without_printing_the_value(monkeypatch, tmp_path, capsys):
+    """設定不備は読める日本語で伝える。**値そのものは出さない**（仕様第12章）。
+
+    `.env` の説明文を置き換え忘れたときに、pydantic の追跡情報だけ出ても
+    何をすればよいか分からないため。
+    """
+    import pytest
+
+    from app.cli import _fail_fast_on_bad_settings
+    from app.config import get_settings
+
+    # ヒント文に含まれない、それと分かる値を使う（ヒントとの一致で誤判定しないため）
+    bad_value = "zzz-too-short-to-be-a-signing-key"[:20]
+    monkeypatch.setenv("APP_SECRET_KEY", bad_value)
+    monkeypatch.setenv("APP_DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+
+    with pytest.raises(SystemExit):
+        _fail_fast_on_bad_settings()
+
+    err = capsys.readouterr().err
+    assert "設定に不備があります" in err
+    assert "APP_SECRET_KEY" in err
+    # 何をすればよいかが書かれている
+    assert "token_urlsafe" in err
+    assert "説明文" in err
+    # **入れられていた値そのものは出さない**
+    assert bad_value not in err
+    get_settings.cache_clear()

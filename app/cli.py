@@ -53,6 +53,41 @@ def init_db() -> None:
     )
 
 
+def _fail_fast_on_bad_settings() -> None:
+    """設定の不備を、読める日本語で先に伝える（仕様第17章）。
+
+    pydantic の例外はそのままだと追跡情報が長く、原因が読み取りにくい。
+    とくに `.env` の値を置き換え忘れたときに何をすればよいかが分からないため、
+    ここで受け止めて必要なことだけを出す。**値そのものは出さない。**
+    """
+    from pydantic import ValidationError
+
+    from app.config import get_settings
+
+    try:
+        get_settings()
+    except ValidationError as exc:
+        print(
+            "設定に不備があります。`.env` を直してから、もう一度実行してください。", file=sys.stderr
+        )
+        for error in exc.errors():
+            name = ".".join(str(part) for part in error["loc"]) or "(不明)"
+            env_name = f"APP_{name.upper()}"
+            print(f"\n  {env_name}: {error['msg']}", file=sys.stderr)
+            if name == "secret_key":
+                print(
+                    "    → 雛形の値や説明文（例：（上で出た値））が残っていませんか。\n"
+                    "      次のコマンドで作り直した値に置き換えてください：\n"
+                    '      python -c "import secrets; print(secrets.token_urlsafe(48))"',
+                    file=sys.stderr,
+                )
+        print(
+            "\n`.env` は compose.yaml と同じ場所に置きます。値は誰にも共有しないでください。",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
+
+
 def check_provider(provider: str, connect: bool) -> None:
     """事業者の設定を確認する（管理画面と同じ内容を端末で見るため）。
 
@@ -174,6 +209,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    _fail_fast_on_bad_settings()
     if args.command == "init-db":
         init_db()
     elif args.command == "create-operator":

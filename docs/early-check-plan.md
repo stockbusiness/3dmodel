@@ -94,15 +94,35 @@ cp .env.example .env
 python3 -c "import secrets; print('APP_SECRET_KEY=' + secrets.token_urlsafe(48))"
 ```
 
-出てきた `APP_SECRET_KEY=...` の行を `.env` に書く。
 Docker Compose は `compose.yaml` と同じ場所の `.env` を自動で読む。
 
-そのうえで `.env` に次を書き、**web と worker を再起動する**。
+**署名鍵は手で写さず、コマンドで書き換える。**
+手で貼ると説明文（`（上で出た値）` など）を消し忘れやすく、
+起動時にエラーになる。PowerShell ならこの2行で済む。
+
+```powershell
+$key = python -c "import secrets; print(secrets.token_urlsafe(48))"
+(Get-Content .env) -replace '^APP_SECRET_KEY=.*', "APP_SECRET_KEY=$key" | Set-Content .env -Encoding utf8NoBOM
+```
+
+そのうえで `.env` をエディタで開き、次の3つを設定する。
+**`（…）` のような説明文は必ず消して、実際の値だけを残すこと。**
 
 ```
-TRIPO_API_KEY=tsk_（作成したキー）
+TRIPO_API_KEY=tsk_ここに実際のキー
 APP_GLOBAL_COST_CAP_USD=3
 APP_LIVE_API_ENABLED=true
+```
+
+書けたか確認する（値は表示されない）。
+
+```powershell
+Get-Content .env | Where-Object { $_ -match '^(APP_SECRET_KEY|TRIPO_API_KEY|APP_LIVE_API_ENABLED|APP_GLOBAL_COST_CAP_USD)=' } | ForEach-Object {
+  $n, $v = $_ -split '=', 2
+  $v = $v.Trim()
+  $note = if ($v -match '[^\x20-\x7E]') { '← 日本語が混じっています（置き換え漏れ）' } else { '' }
+  '{0,-28} 長さ{1,-4} {2}' -f $n, $v.Length, $note
+}
 ```
 
 **`.env` はコミットしない。**
