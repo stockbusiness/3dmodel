@@ -25,3 +25,7 @@ build/
 .DS_Store
 .idea/
 .vscode/
+
+# 早期実感触の試験用画像（docs/early-check/README.md を参照）
+docs/early-check/*
+!docs/early-check/README.md

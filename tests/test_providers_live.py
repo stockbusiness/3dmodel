@@ -337,11 +337,8 @@ def test_external_uri_glb_from_a_real_adapter_is_rejected(operator, monkeypatch)
         assert db.scalar(select(Artifact).where(Artifact.generation_id == generation_id)) is None
 
 
-def test_real_presets_cannot_be_used_for_live_generation(operator):
-    """契約と運用の前提が整うまで、実生成に選べない（仕様第6.3章・第11章）。
-
-    価格とデータ取扱い条件は確認済みになったが、それだけでは選べるようにしない。
-    """
+def test_meshy_stays_disabled_because_free_has_no_api_key(operator):
+    """Meshy は無料プランでAPIキーを発行できないため無効のまま（decisions.md T-12）。"""
     from sqlalchemy import select
 
     from app.db import session_scope
@@ -354,12 +351,73 @@ def test_real_presets_cannot_be_used_for_live_generation(operator):
 
     with session_scope() as db:
         op = db.scalars(select(Operator)).first()
-        for code in ("tripo-standard", "meshy-standard"):
-            preset = db.scalar(select(Preset).where(Preset.code == code))
-            assert preset.is_enabled is False
-            with pytest.raises(GenerationRejected) as excinfo:
-                create_generation(db, operator=op, variant_id=variant_id, preset_id=preset.id)
-            assert "未確認" in str(excinfo.value) or "無効" in str(excinfo.value)
+        preset = db.scalar(select(Preset).where(Preset.code == "meshy-standard"))
+        assert preset.is_enabled is False
+        with pytest.raises(GenerationRejected) as excinfo:
+            create_generation(db, operator=op, variant_id=variant_id, preset_id=preset.id)
+        assert "無効" in str(excinfo.value)
+
+
+def test_enabling_tripo_does_not_open_live_generation(operator, monkeypatch):
+    """プリセットを有効にしただけでは実生成にならない。防御が層になっていること。
+
+    1. `LIVE_API_ENABLED=false` が既定で止める（仕様第8章）
+    2. 有効にしても、APIキーが無ければ止まる（仕様第6.3章）
+    """
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.db import session_scope
+    from app.models import Operator, Preset
+    from app.services.generation import GenerationRejected, create_generation
+    from tests.conftest import add_asset_directly, create_live_experiment
+
+    monkeypatch.delenv("TRIPO_API_KEY", raising=False)
+    experiment_id = create_live_experiment()
+    variant_id = add_asset_directly(experiment_id)
+
+    with session_scope() as db:
+        op = db.scalars(select(Operator)).first()
+        preset = db.scalar(select(Preset).where(Preset.code == "tripo-standard"))
+        assert preset.is_enabled is True
+
+        # 1層目：実APIが無効
+        with pytest.raises(GenerationRejected) as excinfo:
+            create_generation(db, operator=op, variant_id=variant_id, preset_id=preset.id)
+        assert "LIVE_API_ENABLED" in str(excinfo.value)
+
+        # 2層目：実APIを有効にしても、キーが無ければ止まる
+        monkeypatch.setattr(get_settings(), "live_api_enabled", True)
+        with pytest.raises(GenerationRejected) as excinfo:
+            create_generation(db, operator=op, variant_id=variant_id, preset_id=preset.id)
+        assert "APIキー" in str(excinfo.value)
+
+
+def test_missing_download_host_does_not_block_submission(db_ready, monkeypatch):
+    """配信ホスト未設定は送信を止めない（decisions.md A-44）。
+
+    止めてしまうと「配信ホストを確認するための1件」すら出せなくなる。
+    実際の防御は download_guard が行う。
+    """
+    from sqlalchemy import select
+
+    from app.db import session_scope
+    from app.models import Preset
+    from app.services.presets import selectable_reasons
+
+    monkeypatch.setenv("TRIPO_API_KEY", "tsk_test_key")
+    with session_scope() as db:
+        preset = db.scalar(select(Preset).where(Preset.code == "tripo-standard"))
+        reasons = selectable_reasons(preset, live=True)
+        assert not any("配信ホスト" in reason for reason in reasons), reasons
+
+
+def test_download_is_still_refused_and_names_the_host(settings_env):
+    """未設定なら取得は拒否する。ただしどのホストを許可すべきかは分かるようにする。"""
+    with pytest.raises(ProviderError) as excinfo:
+        TripoAdapter().download_result("https://example-cdn.tripo3d.ai/a.glb")
+    assert excinfo.value.kind == "download_failed"
+    assert "example-cdn.tripo3d.ai" in str(excinfo.value)
 
 
 def test_confirmed_prices_are_stored_as_integers(db_ready):
@@ -384,8 +442,10 @@ def test_confirmed_prices_are_stored_as_integers(db_ready):
         for preset in (tripo, meshy):
             assert isinstance(preset.price_max_micro_usd, int)
             assert preset.is_unverified is False
-            # 価格とデータ取扱い条件が確認できても、それだけでは有効にしない
-            assert preset.is_enabled is False
+
+        # Tripo だけで A3.5 を先行する判断（T-13）により、Tripo は有効・Meshy は無効
+        assert tripo.is_enabled is True
+        assert meshy.is_enabled is False
 
 
 def test_confirmed_price_is_not_overwritten(db_ready):

@@ -769,7 +769,7 @@ A3.5 の5題材には足りない**（第2.4.1節・規約第2.10条）。
 | U-4a | 両社：送信した画像と生成物の保持期間。**生成物は両社とも確認済み**（Meshy はAPI経由なら3日で削除＝規約第2.5条で裏づけ／Tripo は保管義務も期間の定めも無く、公開領域のものは永久保持されうる）。**残るのは両社とも「送信した画像（Input）の保持期間」**で、どちらの規約にも記載が無い | 各社のプライバシーポリシー | 生徒作品を送る判断に必要 |
 | ~~U-4b~~ | ~~両社：学習利用の可否と opt-out の手段~~ → **両社とも規約本文で確認済み（2026-09-08）**。**Tripo（有料）：学習に使わないと明記**（第1.6.2節）。**Meshy：Enterprise 以外（Free/Pro/Premium/Ultra）は学習利用の対象と明記**し、外す手段は Order（個別契約）のみ（第2.7.1節）。Tripo 無料は権利自体を会社が保持 | 各社の規約 | **解消。ただし結論が両社で正反対**。学習利用を避けるなら Tripo の有料。Meshy は Enterprise か Order が要る |
 | U-4c | 両社：生成物の利用条件。**Tripo は確認済み（第1.6.3節）：有料なら商用・非商用とも可。Outputs で競合モデル・サービスを作ることのみ禁止**。**Meshy は Free = CC BY 4.0、Pro以上 = Private license for all assets と画面で確認（第2.4.2節）**。Meshy の条文そのものは未取得 | 各社の規約 | 教室採用の判断に必要。**両社とも無料プランでは成果物の扱いが教室向きでない** |
-| U-7 | 両社：成果物を配信するホスト名。**Meshy は確認済み：`assets.meshy.ai`（第2.6節）**。Tripo は未確認 | 実物のURL、または公式資料 | `APP_TRIPO_DOWNLOAD_HOSTS` が空のあいだは Tripo の成果物をダウンロードしない |
+| U-7 | 両社：成果物を配信するホスト名。**Meshy は確認済み：`assets.meshy.ai`（第2.6節）**。Tripo は未確認 | 実物のURL（`docs/early-check-plan.md` 3.3 の手順で確認する） | `APP_TRIPO_DOWNLOAD_HOSTS` が空のあいだは Tripo の成果物をダウンロードしない。**送信は止めない**（`docs/decisions.md` A-44）ので、1件生成して拒否メッセージからホスト名を得る |
 | U-8 | 両社：レート制限の具体的な数値。**Meshy は確認済み（第2.2.2節。最も低いプランでも 20 req/s・同時10件）**。Tripo は未確認 | 公式資料 | Meshy 側は上限を十分下回ることを確認済み。Tripo 側は未確認 |
 | ~~U-9~~ | ~~Meshy：`DELETE /image-to-3d/{id}` が実行中タスクの取消になるか、課金はどうなるか~~ → **確認済み（2026-09-08）**：実行中タスクの取消。`PENDING` は返却、`IN_PROGRESS` は返却なし、終了済みは取消不可。第2.2.1節を参照 | `https://docs.meshy.ai/llms-full.txt` | 解消（`supports_cancel = True` にした。枠は保持する） |
 | U-10 | Tripo：`model_version` をより新しい版（`v3.1-20260211` 等）にすべきか。品質と価格の差 | 公式資料 | 既定の `v2.5-20250123` を採用中 |
@@ -782,6 +782,8 @@ A3.5 の5題材には足りない**（第2.4.1節・規約第2.10条）。
    `price_source_url` を埋め、`is_unverified=False` にする~~ → **完了（2026-09-08）**。
    `is_enabled=True` にするのは**データ取扱い条件（U-4a/U-4b/U-4c）が確認できてから**
 3. `.env` の `APP_TRIPO_DOWNLOAD_HOSTS` / `APP_MESHY_DOWNLOAD_HOSTS` に配信ホストを設定する
-   （Meshy は `assets.meshy.ai`。Tripo は実物のURLで確かめる）
+   （Meshy は `assets.meshy.ai`。**Tripo は実物のURLで確かめる**。
+   未設定のまま1件生成すると、保存失敗のメッセージにホスト名が出るので、
+   それを設定して「保存だけ再試行」する＝追加課金なし。`docs/early-check-plan.md` 3.3）
 4. セット上限額と全体上限額（`APP_GLOBAL_COST_CAP_USD`）を設定する
 5. そのうえで A3.5（早期実感触、5題材×2社＝10件）に進む

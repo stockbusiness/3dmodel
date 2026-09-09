@@ -73,9 +73,11 @@ def check_url(url: str, policy: DownloadPolicy) -> str:
     if not host:
         raise DownloadRejected("ホスト名がありません")
     if not policy.allowed_hosts:
+        # 拒否は変えない。どのホストを許可すればよいかが分かるようにホスト名だけ添える。
+        # 事業者の配信ホストは実物のURLでしか確認できないため（docs/decisions.md A-44）
         raise DownloadRejected(
             "ダウンロードを許可するホストが設定されていません。"
-            "事業者の成果物配信ホストを確認してから設定してください"
+            f"このURLのホストは {host} です。確認のうえ設定してください"
         )
     if not _host_allowed(host, policy.allowed_hosts):
         raise DownloadRejected(f"許可していないホストです: {host}")

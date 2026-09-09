@@ -84,7 +84,14 @@ def download_hosts_configured(provider: str) -> bool:
 def blocking_reasons(provider: str) -> list[str]:
     """実生成に進めない理由（事業者側の設定に起因するもの）を日本語で返す。
 
+    仕様第6.3章が挙げる不可条件のうち「キー未設定」だけがここに当たる。
     プリセット側の理由は `app.services.presets.selectable_reasons` が持つ。
+
+    **配信ホスト未設定はここに入れない**（`docs/decisions.md` A-44）。
+    仕様第6.3章の一覧に無いうえ、事業者の配信ホストは実物のURLでしか確認できず、
+    ここで送信を止めると「確認するための1件」すら出せなくなるため。
+    実際の防御は `download_guard` が行い、未設定なら取得を拒否する。
+    未設定であることは `diagnose()` が注意として返す。
     """
     reasons: list[str] = []
     spec = PROVIDER_KEYS.get(provider)
@@ -94,8 +101,6 @@ def blocking_reasons(provider: str) -> list[str]:
         reasons.append(f"APIキーが設定されていません（環境変数 {spec['env']}）")
     elif not key_prefix_ok(provider) and spec["prefix_is_enforced"] == "yes":
         reasons.append(f"APIキーの形式が想定と違います（{spec['prefix']} で始まる必要があります）")
-    if not download_hosts_configured(provider):
-        reasons.append("成果物の配信ホストが設定されていません")
     return reasons
 
 
@@ -137,8 +142,11 @@ def diagnose(provider: str) -> list[Check]:
         checks.append(
             Check(
                 "成果物の配信ホスト",
-                False,
-                "未設定です。設定するまで成果物を取得しません（仕様第12章）",
+                True,
+                "未設定です。生成は行えますが、成果物の取得は拒否されます"
+                "（仕様第12章）。拒否のメッセージに実際のホスト名が出るので、"
+                "それを設定してから「保存だけ再試行」してください（追加課金なし）",
+                is_warning=True,
             )
         )
 

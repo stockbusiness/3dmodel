@@ -20,6 +20,7 @@ from app.db import session_scope
 from app.models import Operator
 from app.services.presets import (
     apply_confirmed_prices,
+    apply_preset_availability,
     refresh_placeholder_presets,
     seed_presets,
 )
@@ -44,9 +45,11 @@ def init_db() -> None:
         created = seed_presets(db)
         updated = refresh_placeholder_presets(db)
         priced = apply_confirmed_prices(db)
+        availability = apply_preset_availability(db)
     print(
         f"DBを最新まで移行しました。プリセットを {created} 件追加し、"
-        f"{updated} 件を確認済みの内容に更新し、{priced} 件に確認済みの価格を入れました。"
+        f"{updated} 件を確認済みの内容に更新し、{priced} 件に確認済みの価格を入れ、"
+        f"{len(availability)} 件の有効・無効を更新しました。"
     )
 
 
@@ -111,9 +114,11 @@ def main() -> None:
             created = seed_presets(db)
             updated = refresh_placeholder_presets(db)
             priced = apply_confirmed_prices(db)
+            availability = apply_preset_availability(db)
         print(
             f"プリセットを {created} 件追加し、{updated} 件を更新し、"
-            f"{priced} 件に確認済みの価格を入れました。"
+            f"{priced} 件に確認済みの価格を入れ、"
+            f"{len(availability)} 件の有効・無効を更新しました。"
         )
 
 
