@@ -79,6 +79,37 @@ Tripo 利用規約 第5.2.1条は、無料利用者について次のように�
 画像は `docs/early-check/` に置く（このディレクトリの中身はコミットしない。
 `docs/early-check/README.md` を参照）。
 
+### 2.1 画像の形の条件（権利とは別の、技術上の条件）
+
+**1枚の画像に写す対象は1つだけにする。**
+
+現行の `tripo-standard` が呼ぶのは Tripo の `image_to_model`、
+つまり**1枚の画像を1つの対象として読むAPI**である。
+正面図と背面図を横並びにした1枚（ターンアラウンド）を渡すと、
+**2体が並んだ1つのモデルになる可能性が高い**
+（`docs/decisions.md` T-15、`docs/provider-contracts.md` 第1.10節）。
+
+- ⭕ 対象1つが1枚に写っている
+- ❌ 正面＋背面、正面＋側面などを**1枚に並べたもの**
+  → **正面だけを切り出して**から使う
+
+多視点をまとめて渡すAPI（`multiview_to_model`）は公式SDKに実在するが、
+**価格が未確認のため今回は使わない**（U-26）。
+
+**その他、結果を読み違えないための条件：**
+
+| 条件 | 理由 |
+| --- | --- |
+| 背景が無地か単純 | 背景ごと立体にされると、品質の良し悪しが判断できない |
+| 対象が画面の中で十分大きい | 小さすぎると細部が出ない |
+| 影・反射・見切れが少ない | 失敗の原因が入力側か事業者側か分からなくなる |
+| 短辺 1024px 以上を目安 | 極端に小さい画像は品質の下限を測ることになってしまう |
+
+**5枚は易しい順に並べる。** 1枚目で失敗すると、以降の結果が
+「事業者の限界」なのか「題材が難しすぎた」のか切り分けられない。
+糸・房・角・触手のような**細い突起が多いものは4〜5枚目に置く**。
+
+
 ---
 
 ## 3. 実施手順
@@ -94,15 +125,35 @@ cp .env.example .env
 python3 -c "import secrets; print('APP_SECRET_KEY=' + secrets.token_urlsafe(48))"
 ```
 
-出てきた `APP_SECRET_KEY=...` の行を `.env` に書く。
 Docker Compose は `compose.yaml` と同じ場所の `.env` を自動で読む。
 
-そのうえで `.env` に次を書き、**web と worker を再起動する**。
+**署名鍵は手で写さず、コマンドで書き換える。**
+手で貼ると説明文（`（上で出た値）` など）を消し忘れやすく、
+起動時にエラーになる。PowerShell ならこの2行で済む。
+
+```powershell
+$key = python -c "import secrets; print(secrets.token_urlsafe(48))"
+(Get-Content .env) -replace '^APP_SECRET_KEY=.*', "APP_SECRET_KEY=$key" | Set-Content .env -Encoding utf8NoBOM
+```
+
+そのうえで `.env` をエディタで開き、次の3つを設定する。
+**`（…）` のような説明文は必ず消して、実際の値だけを残すこと。**
 
 ```
-TRIPO_API_KEY=tsk_（作成したキー）
+TRIPO_API_KEY=tsk_ここに実際のキー
 APP_GLOBAL_COST_CAP_USD=3
 APP_LIVE_API_ENABLED=true
+```
+
+書けたか確認する（値は表示されない）。
+
+```powershell
+Get-Content .env | Where-Object { $_ -match '^(APP_SECRET_KEY|TRIPO_API_KEY|APP_LIVE_API_ENABLED|APP_GLOBAL_COST_CAP_USD)=' } | ForEach-Object {
+  $n, $v = $_ -split '=', 2
+  $v = $v.Trim()
+  $note = if ($v -match '[^\x20-\x7E]') { '← 日本語が混じっています（置き換え漏れ）' } else { '' }
+  '{0,-28} 長さ{1,-4} {2}' -f $n, $v.Length, $note
+}
 ```
 
 **`.env` はコミットしない。**
@@ -122,6 +173,57 @@ APIキーの値は表示されない。設定されているか、先頭が想�
 - 全体上限額：**3 USD**
 - 成果物の配信ホスト：**未設定（注意）** ← この時点ではこれで正しい（3.3で設定する）
 
+#### 3.1.1 Windows（PowerShell）の場合
+
+コマンドは同じだが、`docker compose` を使うには **Docker Desktop が起動している**
+必要がある。次のエラーは「Docker Desktop が動いていない」という意味である。
+
+```
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine
+```
+
+スタートメニューから Docker Desktop を起動し、左下が **Engine running** に
+なるのを待ってからやり直す。
+
+#### 3.1.2 Docker を使わずに動かす場合（要注意）
+
+Docker Desktop が使えないときは Python で直接動かせる。ただし**落とし穴がひとつある。**
+
+**`.env` から読まれるのは `APP_` で始まる設定だけである。**
+`TRIPO_API_KEY` は `APP_` で始まらないため、**`.env` に書いても読まれない。**
+シェルの環境変数として設定する必要がある
+（Docker Compose 経由なら `.env` から読まれるので、この問題は起きない）。
+
+PowerShell の場合：
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev]"
+.\.venv\Scripts\python -m pip install "tripo3d[async]==0.4.2"
+
+# APP_ で始まるものは .env から読まれる。APIキーだけは環境変数に置く
+$env:TRIPO_API_KEY = "tsk_（作成したキー）"
+
+.\.venv\Scripts\python -m app.cli init-db
+.\.venv\Scripts\python -m app.cli check-provider tripo
+.\.venv\Scripts\python -m app.cli check-provider tripo --connect
+```
+
+画面も見る場合は続けて：
+
+```powershell
+.\.venv\Scripts\python -m app.cli create-operator teacher1 --display-name "講師1"
+.\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+**ワーカーは別のウィンドウで動かす。** そのウィンドウでも
+`$env:TRIPO_API_KEY` を設定してから起動すること（外部へ送信するのはワーカー）。
+
+```powershell
+$env:TRIPO_API_KEY = "tsk_（作成したキー）"
+.\.venv\Scripts\python -m app.worker
+```
+
 ### 3.2 接続テストで残高を確かめる
 
 `/admin` の Tripo の「接続テストを実行」を押す。
@@ -135,8 +237,13 @@ docker compose run --rm web python -m app.cli check-provider tripo --connect
 
 - **成功すれば、事業者側のクレジット残高が参考表示される。**
   ここで **無料アカウントにクレジットがあるか（U-23 の残り）が分かる。**
-- 残高が **0 なら、この先に進めない。** クレジットの購入が必要になる
-  （$0.01/credit、1件30credits）。
+- 残高が **0 なら、この先に進めない。** クレジットの購入が必要になる。
+  **無料アカウントの残高は 0 である**ことを 2026-09-09 に確認した
+  （`docs/provider-contracts.md` 第1.8節）。
+  購入は `https://developers.tripo3d.ai/ja/billing` の「クレジットを追加する」から。
+  **必要額は $2**（最小$1・整数USDのみ。5件＝150credits に $1 では足りない）。
+  **既定で $50 が選ばれているので、カスタム金額に `2` を入れてから押すこと**
+  （第1.9節）。支払い後、残高の同期に最大5分程度かかる。
 - 認証が通らなければ、キーの取り違えか、IP制限（3.5参照）を疑う。
 
 ### 3.3 配信ホストを確認する（1件だけ実行する）

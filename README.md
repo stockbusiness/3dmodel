@@ -16,7 +16,7 @@
 | 実装済み | ログイン、検証セット、画像登録（利用同意つき）、加工版追加、永続ワーカーによる生成、状態遷移の全分岐と復帰操作、冪等キー、上限額判定、送信枠、2社比較、ブラインド評価と開示、品質比較画面、判定表、集計、費用管理、校正セット、Tripo/Meshyアダプター、成果物取得の保護、GLB検査と形状メトリクス、3D表示、5段階評価、CSV出力、限定公開環境の設定例、**管理画面（事業者接続の自己診断・接続テスト・成果物の管理）** |
 | モック検証済み | 上記の一連の流れ。**仕様第13章の必須試験1〜20をすべて実施**（自動試験123件、うち画面の動作確認はPlaywright）。web と worker を別プロセスで動かし、生成中にワーカーを再起動しても同じ外部タスクを再確認して完了することを確認。Tripo公式SDKはローカルの偽サーバーに向けて実際に動かして確認 |
 | 実API検証済み | なし（`LIVE_API_ENABLED=false`） |
-| 未確認 | 実際のAPIキーでの接続テスト（キー未取得のため）、実機（iPhone Safari / Android Chrome）での表示（`docs/quality-test-plan.md` にチェックリストあり）、`docker compose build` の実行（開発環境からコンテナレジストリへ接続できないため。`docs/decisions.md` の E-1）、`docs/provider-contracts.md` 第3節に残る項目 |
+| 未確認 | 実際のAPIキーでの接続テスト（キー未取得のため）、実機（iPhone Safari / Android Chrome）での表示（`docs/quality-test-plan.md` にチェックリストあり）、`docker compose up` の実動作（`docker compose build` は 2026-09-09 に利用者の環境で成功を確認。`docs/decisions.md` の E-1 / E-1b）、`docs/provider-contracts.md` 第3節に残る項目 |
 
 残っているのは **A3.5（早期実感触）** と **A5（実API試験）** です。
 

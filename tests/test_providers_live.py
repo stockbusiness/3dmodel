@@ -92,6 +92,45 @@ def test_tripo_only_sends_known_parameters():
     }
 
 
+def test_tripo_declares_the_real_image_format(settings_env):
+    """PNG を送るときは PNG として申告されること（decisions.md A-46）。
+
+    公式SDKは**ファイル名の拡張子**から申告形式を決める
+    （`_EXT_TO_STS_FORMAT`。不明な拡張子は "jpeg" になる）。
+    こちらの保存キーは拡張子を持たないため、そのまま渡すと
+    PNG/WebP でも "jpeg" と申告されてしまう。
+    """
+    from pathlib import Path
+
+    from app.providers.tripo import _MIME_TO_SUFFIX, _named_copy
+    from app.services import storage
+    from tests.conftest import make_png
+
+    stored = storage.save_bytes(make_png())
+
+    for mime, expected in _MIME_TO_SUFFIX.items():
+        with _named_copy(stored.key, mime) as path:
+            assert Path(path).suffix == expected, mime
+            # 元のファイル名や保存キーを一時ファイル名に使わない（仕様第12章）
+            assert stored.key not in Path(path).name
+            assert Path(path).read_bytes() == make_png()
+        # 抜けたら消えていること
+        assert not Path(path).exists(), mime
+
+
+def test_tripo_refuses_a_format_it_cannot_declare(settings_env):
+    """申告できない形式は送らない（推測で "jpeg" と言わない）。"""
+    from app.providers.tripo import _named_copy
+    from app.services import storage
+    from tests.conftest import make_png
+
+    stored = storage.save_bytes(make_png())
+    with pytest.raises(ProviderError) as excinfo:
+        with _named_copy(stored.key, "image/gif"):
+            pass
+    assert "image/gif" in str(excinfo.value)
+
+
 def test_tripo_download_uses_the_guard_not_the_sdk(settings_env, monkeypatch):
     """SDKのダウンロード（SSL検証を落とす経路）を使わないこと。"""
     from app.services import download_guard
