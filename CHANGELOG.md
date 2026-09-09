@@ -46,6 +46,14 @@
   `assets.meshy.ai` はいずれも egress proxy が CONNECT に 403 を返す。
   **A3.5・A5 の実生成は運営の環境で実行する**
 
+### 修正
+
+- **`compose.yaml` で `TRIPO_API_KEY` / `MESHY_API_KEY` を `web` にも渡すようにした。**
+  管理画面の接続テストと `app.cli check-provider --connect` は `web` で動くため、
+  worker にしか渡していないと**`.env` に書いても「未設定」と表示されていた**。
+  両サービスに渡っていることを試験で守るようにした（`tests/test_admin.py`）
+- `pyproject.toml` の dev に `pyyaml` を明記（compose の配線試験で使う。間接依存に頼らない）
+
 ### 変更（A3.5 の詰みを解消）
 
 - **保存失敗の理由を5秒ごとの巡回でも画面に反映するようにした。**

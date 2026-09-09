@@ -85,7 +85,19 @@ Tripo 利用規約 第5.2.1条は、無料利用者について次のように�
 
 ### 3.1 キーと上限額を設定する
 
-`.env` に次を書き、**web と worker を再起動する**。
+**`.env` はリポジトリの一番上（`compose.yaml` と同じ場所）に置く。**
+はじめは存在しないので、雛形を写して作る。
+
+```
+cd <リポジトリのルート>
+cp .env.example .env
+python3 -c "import secrets; print('APP_SECRET_KEY=' + secrets.token_urlsafe(48))"
+```
+
+出てきた `APP_SECRET_KEY=...` の行を `.env` に書く。
+Docker Compose は `compose.yaml` と同じ場所の `.env` を自動で読む。
+
+そのうえで `.env` に次を書き、**web と worker を再起動する**。
 
 ```
 TRIPO_API_KEY=tsk_（作成したキー）

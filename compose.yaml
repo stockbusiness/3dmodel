@@ -17,6 +17,11 @@ services:
       APP_SESSION_TTL_HOURS: ${APP_SESSION_TTL_HOURS:-12}
       APP_TRIPO_DOWNLOAD_HOSTS: ${APP_TRIPO_DOWNLOAD_HOSTS:-}
       APP_MESHY_DOWNLOAD_HOSTS: ${APP_MESHY_DOWNLOAD_HOSTS:-}
+      # 管理画面の接続テストと `python -m app.cli check-provider --connect` は
+      # web で動くため、web にもキーが要る。どちらも認証を確かめるだけで
+      # 生成は行わない（課金なし）。値は画面にもログにも出さない（仕様第12章）
+      TRIPO_API_KEY: ${TRIPO_API_KEY:-}
+      MESHY_API_KEY: ${MESHY_API_KEY:-}
     volumes:
       - data:/srv/data
     restart: unless-stopped
@@ -37,7 +42,7 @@ services:
       APP_LIVE_API_ENABLED: ${APP_LIVE_API_ENABLED:-false}
       APP_TRIPO_DOWNLOAD_HOSTS: ${APP_TRIPO_DOWNLOAD_HOSTS:-}
       APP_MESHY_DOWNLOAD_HOSTS: ${APP_MESHY_DOWNLOAD_HOSTS:-}
-      # APIキーは worker だけが使う（外部送信を行うのは worker のため）
+      # 外部への送信・状態確認・成果物取得を行うのは worker
       TRIPO_API_KEY: ${TRIPO_API_KEY:-}
       MESHY_API_KEY: ${MESHY_API_KEY:-}
     volumes:
