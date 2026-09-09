@@ -199,6 +199,18 @@ MESHY_API_KEY=msy_...
 
 `.env` はコミットしないでください。
 
+### 端末から確かめる
+
+画面を開かずに、同じ内容を端末で確認できます。
+
+```
+docker compose run --rm web python -m app.cli check-provider tripo
+docker compose run --rm web python -m app.cli check-provider tripo --connect
+```
+
+`--connect` を付けると認証まで確かめます（**課金は発生しません**）。
+どちらも **APIキーの値は表示しません。**
+
 ### 接続テスト
 
 認証が通るかだけを確かめます。**生成は行わないので課金は発生しません。**
@@ -232,6 +244,11 @@ MESHY_API_KEY=msy_...
 6. 送信する画像の利用同意が `granted` または `not_required` であること
 7. `.env` の `APP_LIVE_API_ENABLED=true` と APIキー（Tripoは `tsk_`、Meshyは `msy_` で始まる）が
    ユーザーの明示的な操作で設定されること
+
+**注意：Meshy は無料プランでAPIキーを発行できません**（2026-09-09 確認）。
+API 利用は Pro（$20/月）以上の特典です。クレジットを追加購入してもAPIは使えるようになりません。
+Tripo は無料アカウントでもキーを発行できます（キーは**作成時に1回だけ表示**されます）。
+詳細は `docs/provider-contracts.md` 第1.7節・第2.8節、判断は `docs/decisions.md` T-12。
 
 1〜4が済むまで、画面上でプリセットを選ぶことはできません。
 

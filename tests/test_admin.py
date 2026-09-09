@@ -340,3 +340,36 @@ def _settings():
     from app.config import get_settings
 
     return get_settings()
+
+
+# --- 配置（compose）--------------------------------------------------------
+
+
+def test_compose_gives_the_api_keys_to_both_services():
+    """web と worker の両方にAPIキーが渡ること。
+
+    - worker：外部への送信・状態確認・成果物取得を行う
+    - web：管理画面の接続テストと `app.cli check-provider --connect` を行う
+
+    片方に渡し忘れると「.env に書いたのに未設定と出る」ことになるので試験で守る。
+    """
+    from pathlib import Path
+
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).resolve().parents[1] / "compose.yaml").read_text())
+    for service in ("web", "worker"):
+        env = compose["services"][service]["environment"]
+        for name in ("TRIPO_API_KEY", "MESHY_API_KEY"):
+            assert name in env, f"{service} に {name} が渡っていません"
+            # 値はコミットしない。.env から差し込む形であること
+            assert env[name].startswith("${"), f"{service} の {name} が直書きされています"
+
+
+def test_compose_does_not_hardcode_any_secret():
+    """compose.yaml に秘密の値を直書きしない（CLAUDE.md 第5章）。"""
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "compose.yaml").read_text()
+    assert "tsk_" not in text
+    assert "msy_" not in text

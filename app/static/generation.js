@@ -93,6 +93,18 @@ function applyStatus(data) {
 
   if (badge) badge.textContent = STATUS_LABELS[data.tech_status] || data.tech_status;
   if (note) note.textContent = NOT_A_GENERATION_FAILURE[data.tech_status] || "";
+
+  // 事業者・保存の失敗理由は巡回でも反映する。
+  // 配信ホスト未設定の拒否メッセージにはホスト名が入っており、
+  // 読み込み直さずに読める必要がある（docs/early-check-plan.md 3.3）
+  const errorNote = panel.querySelector("[data-error-note]");
+  if (errorNote) {
+    const text = data.error_note || "";
+    errorNote.textContent = text;
+    errorNote.hidden = text === "";
+    errorNote.className =
+      data.tech_status === "provider_failed" ? "notice danger" : "notice warn";
+  }
   if (progress) {
     progress.textContent =
       data.progress_percent === null || data.progress_percent === undefined

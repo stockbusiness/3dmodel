@@ -2,8 +2,14 @@
 
 Tripo / Meshy のエンドポイント・モデルID・パラメーター・状態値・**価格**・
 **データ取扱い条件**は公式資料で確認済み（2026-09-08、docs/provider-contracts.md）。
-有料アカウントの契約と、成果物の配信ホスト・公開範囲の確認が済んでいないため、
-**無効のまま**登録する（仕様第4章・第11章）。
+
+- `tripo-standard` は **有効**（2026-09-09、`docs/decisions.md` T-13）。
+  A3.5 を Tripo だけで先行実施すると運営が判断したため。
+- `meshy-standard` は **無効のまま**。**無料プランではAPIキーを発行できず**、
+  本システムから呼べないため（同 T-12）。Pro 以上を契約したら有効にする。
+
+有効にしても、実生成には `LIVE_API_ENABLED=true`・上限額・利用同意・送信枠が
+別途必要である（仕様第8章・第11章）。
 """
 
 from __future__ import annotations
@@ -20,13 +26,18 @@ UNVERIFIED_NOTE = (
     "確認するまで実生成は選択できません。"
 )
 
-# 価格・データ取扱い条件は確認できた。残るのは契約と運用の前提で、
-# それが整うまで実生成は選べない
+# 価格・データ取扱い条件は確認済み。無効のままにしている理由を事業者ごとに書く
 DATA_TERMS_UNVERIFIED_NOTE = (
     "エンドポイント・モデルID・パラメーター・状態値・エラー・価格・"
     "データ取扱い条件は公式資料で確認済み（2026-09-08）。"
-    "有料アカウントの契約、成果物の配信ホストの設定、生成物の公開範囲の確認が"
-    "済んでいないため、実生成は選べません。詳細は docs/provider-contracts.md を参照。"
+    "詳細は docs/provider-contracts.md を参照。"
+)
+
+MESHY_DISABLED_NOTE = (
+    "確認は済んでいますが、**無料プランではAPIキーを発行できない**ため"
+    "本システムから呼べません（2026-09-09 確認）。"
+    "Pro（$20/月）以上を契約してから有効にしてください。"
+    "詳細は docs/provider-contracts.md 第2.8節、docs/decisions.md T-12。"
 )
 
 # --- 確認済みの価格（仕様第11章。金額は micro-USD の整数で持つ） ----------------
@@ -94,8 +105,9 @@ SEED: list[dict] = [
         },
         "version": "1",
         "sdk_version": "tripo3d==0.4.2",
-        # 契約と運用の前提が整うまで無効のまま
-        "is_enabled": False,
+        # A3.5 を Tripo だけで先行実施する判断（T-13）により有効。
+        # 実生成には LIVE_API_ENABLED・上限額・利用同意・送信枠が別途要る
+        "is_enabled": True,
         "price_max_micro_usd": CONFIRMED_PRICES["tripo-standard"]["price_max_micro_usd"],
         "price_version": CONFIRMED_PRICES["tripo-standard"]["price_version"],
         "price_checked_on": CONFIRMED_PRICES["tripo-standard"]["price_checked_on"],
@@ -119,14 +131,14 @@ SEED: list[dict] = [
         },
         "version": "1",
         "sdk_version": "meshy-cli==0.2.0 で確認した公式契約に基づく自前のHTTP実装",
-        # 契約と運用の前提が整うまで無効のまま
+        # 無料プランではAPIキーを発行できないため呼べない（T-12）。Pro以上の契約後に有効化する
         "is_enabled": False,
         "price_max_micro_usd": CONFIRMED_PRICES["meshy-standard"]["price_max_micro_usd"],
         "price_version": CONFIRMED_PRICES["meshy-standard"]["price_version"],
         "price_checked_on": CONFIRMED_PRICES["meshy-standard"]["price_checked_on"],
         "price_source_url": CONFIRMED_PRICES["meshy-standard"]["price_source_url"],
         "is_unverified": False,
-        "unverified_note": DATA_TERMS_UNVERIFIED_NOTE,
+        "unverified_note": MESHY_DISABLED_NOTE,
     },
 ]
 
@@ -240,8 +252,8 @@ def apply_confirmed_prices(db: Session) -> int:
     上書きしないため。過去の実行は generations のスナップショットを見るので、
     この更新では変わらない（仕様第8章）。
 
-    `is_enabled` はここでは触らない。契約と運用の前提が整うまで、
-    実生成に選べない状態を保つ。
+    `is_enabled` はここでは触らない。有効・無効は `apply_preset_availability`
+    が運営の判断にもとづいて設定する。
     """
     updated = 0
     for code, price in CONFIRMED_PRICES.items():
@@ -258,6 +270,35 @@ def apply_confirmed_prices(db: Session) -> int:
         updated += 1
     db.flush()
     return updated
+
+
+# 実生成に使ってよいと運営が判断したプリセット（`docs/decisions.md` T-13）。
+# ここに無いものは無効のままにする。
+ENABLED_REAL_PRESETS = ("tripo-standard",)
+
+
+def apply_preset_availability(db: Session) -> list[str]:
+    """運営の判断にもとづく有効・無効を、既存の行にも反映する（仕様第8章）。
+
+    有効にしても実生成にはならない。`LIVE_API_ENABLED`・上限額・利用同意・送信枠が
+    別途必要である（仕様第8章・第11章）。
+
+    変更した行のコードを返す。何も変えなければ空。
+    """
+    changed: list[str] = []
+    for code in CONFIRMED_PRICES:
+        preset = db.scalar(select(Preset).where(Preset.code == code))
+        if preset is None:
+            continue
+        want_enabled = code in ENABLED_REAL_PRESETS
+        want_note = DATA_TERMS_UNVERIFIED_NOTE if want_enabled else MESHY_DISABLED_NOTE
+        if preset.is_enabled == want_enabled and preset.unverified_note == want_note:
+            continue
+        preset.is_enabled = want_enabled
+        preset.unverified_note = want_note
+        changed.append(code)
+    db.flush()
+    return changed
 
 
 def selectable_reasons(preset: Preset, *, live: bool) -> list[str]:

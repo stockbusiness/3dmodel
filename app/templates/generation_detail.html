@@ -36,11 +36,10 @@
     <dt>送信枠</dt><dd>{{ "消費している" if generation.consumes_quota else "返却済み" }}</dd>
     <dt>生成ID</dt><dd class="mono">{{ generation.id }}</dd>
   </dl>
-  {% if generation.error_note %}
-    <div class="notice {{ 'danger' if generation.tech_status == 'provider_failed' else 'warn' }}">
-      {{ generation.error_note }}
-    </div>
-  {% endif %}
+  {# 5秒ごとの巡回でも書き換えられるよう、入れ物は常に置いて空なら隠す。
+     配信ホストの確認（docs/early-check-plan.md 3.3）は、この文言を読む手順のため #}
+  <div class="notice {{ 'danger' if generation.tech_status == 'provider_failed' else 'warn' }}"
+       data-error-note {% if not generation.error_note %}hidden{% endif %}>{{ generation.error_note }}</div>
 
   <h3>この状態でできること</h3>
   <p class="footnote">
