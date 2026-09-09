@@ -122,6 +122,57 @@ APIキーの値は表示されない。設定されているか、先頭が想�
 - 全体上限額：**3 USD**
 - 成果物の配信ホスト：**未設定（注意）** ← この時点ではこれで正しい（3.3で設定する）
 
+#### 3.1.1 Windows（PowerShell）の場合
+
+コマンドは同じだが、`docker compose` を使うには **Docker Desktop が起動している**
+必要がある。次のエラーは「Docker Desktop が動いていない」という意味である。
+
+```
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine
+```
+
+スタートメニューから Docker Desktop を起動し、左下が **Engine running** に
+なるのを待ってからやり直す。
+
+#### 3.1.2 Docker を使わずに動かす場合（要注意）
+
+Docker Desktop が使えないときは Python で直接動かせる。ただし**落とし穴がひとつある。**
+
+**`.env` から読まれるのは `APP_` で始まる設定だけである。**
+`TRIPO_API_KEY` は `APP_` で始まらないため、**`.env` に書いても読まれない。**
+シェルの環境変数として設定する必要がある
+（Docker Compose 経由なら `.env` から読まれるので、この問題は起きない）。
+
+PowerShell の場合：
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev]"
+.\.venv\Scripts\python -m pip install "tripo3d[async]==0.4.2"
+
+# APP_ で始まるものは .env から読まれる。APIキーだけは環境変数に置く
+$env:TRIPO_API_KEY = "tsk_（作成したキー）"
+
+.\.venv\Scripts\python -m app.cli init-db
+.\.venv\Scripts\python -m app.cli check-provider tripo
+.\.venv\Scripts\python -m app.cli check-provider tripo --connect
+```
+
+画面も見る場合は続けて：
+
+```powershell
+.\.venv\Scripts\python -m app.cli create-operator teacher1 --display-name "講師1"
+.\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+**ワーカーは別のウィンドウで動かす。** そのウィンドウでも
+`$env:TRIPO_API_KEY` を設定してから起動すること（外部へ送信するのはワーカー）。
+
+```powershell
+$env:TRIPO_API_KEY = "tsk_（作成したキー）"
+.\.venv\Scripts\python -m app.worker
+```
+
 ### 3.2 接続テストで残高を確かめる
 
 `/admin` の Tripo の「接続テストを実行」を押す。
