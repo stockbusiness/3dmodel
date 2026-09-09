@@ -27,6 +27,9 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import contextmanager
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from app.config import get_settings
 from app.models import AssetVariant, Preset
@@ -125,6 +128,41 @@ def _run(coroutine_factory, timeout: float):
     return asyncio.run(_with_client(coroutine_factory, timeout))
 
 
+# 事業者へ申告できる形式（公式SDK 0.4.2 の `_EXT_TO_STS_FORMAT` にある画像形式）
+_MIME_TO_SUFFIX = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+
+@contextmanager
+def _named_copy(storage_key: str, mime: str):
+    """保存物を、正しい拡張子を付けた一時ファイルとして渡す。
+
+    公式SDKは拡張子から申告形式を決めるため、拡張子の無いパスを渡すと
+    PNG/WebP でも "jpeg" と申告される（`docs/decisions.md` A-46）。
+
+    一時ファイルの名前は無作為で、**元のファイル名は使わない**（仕様第12章）。
+    抜けても残らないよう、必ず後始末する。
+    """
+    suffix = _MIME_TO_SUFFIX.get(mime)
+    if suffix is None:
+        raise ProviderError(
+            f"送信できない画像形式です: {mime}",
+            kind=ERROR_PROVIDER_FAILED,
+        )
+    data = storage.read_bytes(storage_key)
+    handle = NamedTemporaryFile(suffix=suffix, delete=False)  # noqa: SIM115
+    try:
+        handle.write(data)
+        handle.flush()
+        handle.close()
+        yield handle.name
+    finally:
+        Path(handle.name).unlink(missing_ok=True)
+
+
 class TripoAdapter(ProviderAdapter):
     name = "tripo"
     # 公式SDK 0.4.2 に取消のメソッドは無い。公式資料で確認できるまで未対応とする
@@ -150,21 +188,27 @@ class TripoAdapter(ProviderAdapter):
         settings = get_settings()
         # EXIF方向を正規化し位置情報を除いた送信用コピーを送る（仕様第12章）
         key = variant.submission_storage_key or variant.storage_key
-        image_path = str(storage.path_for(key))
         params = self._call_params(preset)
 
-        async def call(client):
-            return await client.image_to_model(image=image_path, **params)
+        # SDK は**ファイル名の拡張子**から事業者へ申告する形式を決める
+        # （`_EXT_TO_STS_FORMAT`。不明な拡張子は "jpeg" にされる）。
+        # こちらの保存キーは拡張子を持たない（仕様第12章：元ファイル名を使わない）ため、
+        # そのまま渡すと PNG/WebP でも "jpeg" と申告されてしまう。
+        # 正しい拡張子を付けた一時ファイルを作って渡す（docs/decisions.md A-46）
+        with _named_copy(key, variant.mime) as image_path:
 
-        try:
-            task_id = _run(call, timeout=settings.submit_timeout_seconds)
-        except TimeoutError as exc:
-            # 応答が無いだけで未課金とは断定しない。呼び出し側が submission_unknown にする
-            raise SubmitTimeout() from exc
-        except ProviderError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - SDKの例外を正規化する
-            raise _classify(exc) from exc
+            async def call(client):
+                return await client.image_to_model(image=image_path, **params)
+
+            try:
+                task_id = _run(call, timeout=settings.submit_timeout_seconds)
+            except TimeoutError as exc:
+                # 応答が無いだけで未課金とは断定しない。呼び出し側が submission_unknown にする
+                raise SubmitTimeout() from exc
+            except ProviderError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - SDKの例外を正規化する
+                raise _classify(exc) from exc
         return SubmitResult(provider_task_id=str(task_id))
 
     def fetch_status(self, provider_task_id: str) -> StatusResult:
