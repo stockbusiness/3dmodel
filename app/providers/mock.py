@@ -34,7 +34,10 @@ from app.providers.base import (
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures"
-SAMPLES = ("sample_cube.glb", "sample_pyramid.glb")
+# テクスチャ付きの見本を必ず含める。**テクスチャの有無で表示経路が変わる**ため、
+# 無しの見本しか出さないと CSP がテクスチャの読込を止めていても試験で気づけない
+# （`docs/decisions.md` A-50）。
+SAMPLES = ("sample_textured_cube.glb", "sample_cube.glb", "sample_pyramid.glb")
 
 SUCCESS = "success"
 DELAYED = "delayed"

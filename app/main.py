@@ -13,18 +13,23 @@ from app.templating import TEMPLATES_DIR  # noqa: F401  （テンプレート探
 
 # CSPの外部接続は限定する。model-viewer は同一オリジンの固定版のみ（仕様第12章）。
 #
-# 緩めている2点と理由（いずれも外部への接続は許していない）：
+# 緩めている3点と理由（いずれも外部への接続は許していない）：
 # - script-src の 'wasm-unsafe-eval'：model-viewer が WebAssembly を初期化するため。
 #   これが無いと3D表示が動かない。任意スクリプトの実行を許すものではない。
 # - style-src の 'unsafe-inline'：model-viewer が Shadow DOM に style 属性を当てるため。
 #   スクリプトの inline は許していない。
+# - connect-src の blob:：three.js の GLTFLoader が **GLBに埋め込まれたテクスチャ**を
+#   Blob URL に切り出してから fetch するため。これが無いとテクスチャだけが読めず、
+#   形は出るのに**真っ白なモデル**になる（`docs/decisions.md` A-50）。
+#   blob: はこのページ自身が手元のデータから作るURLで、**外部への通信路にはならない**。
+#   同じ理由で img-src と worker-src では既に blob: を許可していた。
 CSP = (
     "default-src 'self'; "
     "script-src 'self' 'wasm-unsafe-eval'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: blob:; "
     "font-src 'self'; "
-    "connect-src 'self'; "
+    "connect-src 'self' blob:; "
     "worker-src 'self' blob:; "
     "frame-ancestors 'none'; "
     "base-uri 'none'; "
