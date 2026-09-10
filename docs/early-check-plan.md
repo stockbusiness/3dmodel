@@ -160,11 +160,18 @@ ChatGPT 等の画像生成にそのまま貼る。`【ここに題材】` だけ
 対象が1つ・全体が収まっている・背景が無地の薄いグレー・光が均一・
 全域にピント・斜め45度・文字なし・透明素材でない・正方形。
 
-**満たさなかった項目が1つある。** 脚の下に**ごく薄い接地影**が出た。
-そのため下記の定型文に**「地面・床面を描かない」「接地影も描かない」**を足した
-（`docs/decisions.md` A-47）。**この追記の効果はまだ確かめていない。**
+**満たさなかった項目が1つあった。** 脚の下に**ごく薄い接地影**が出た。
+そのため定型文に**「地面・床面を描かない」「接地影も描かない」**を足した（A-47）。
 
-**標本は1件である。** 題材を変えると外れる可能性があるので、
+**追記の効果を確認した（2026-09-10）：** 強化後の定型文で作った5枚
+（壺・石灯籠・鳥居・椅子・狛犬）を目視したところ、**5枚とも接地影が出ていない。**
+**A-47 の追記は効いた。**
+
+**そのかわり別の項目が外れた。** **鳥居の1枚だけが真正面**で、他の4枚は斜め45度だった。
+定型文が「真正面、**または**やや斜め45度」と両方を許していたためである。
+**視点を斜め45度に統一するよう定型文を直した**（A-48。理由は第2.2.3節）。
+
+**標本は6件（椅子1＋5枚）である。** 題材を変えると外れる可能性があるので、
 **毎回、送信前に第2.2.1節の表で確認する。**
 外れた項目があればこの節の定型文を直し、何を直したかを書き足す。
 
@@ -180,13 +187,14 @@ ChatGPT 等の画像生成にそのまま貼る。`【ここに題材】` だけ
 - 影を落とさない。対象の下に接地影を作らない。薄い影も描かない
 - 光は全体に均一に当てる。強い逆光やスポットライトにしない
 - 画面全体にピントを合わせる。背景ぼかしを使わない
-- 真正面、またはやや斜め45度から見た角度
+- **やや斜め45度から見た角度にする。真正面から見た構図にしない**
 - 文字・ロゴ・枠・余白の装飾を入れない
 - ガラス・鏡・透明な素材にしない
 - 正方形、できるだけ高解像度
 
 避けること: 風景、背景、地面、床、台、地平線、複数の対象、見切れ、
-影、接地影、背景ぼかし、逆光、劇的な照明、文字、ロゴ、枠、透明素材、動きのブレ
+影、接地影、背景ぼかし、逆光、劇的な照明、文字、ロゴ、枠、透明素材、動きのブレ、
+真正面からの構図、正面図のような平らな見え方
 ```
 
 **英語で指定したほうが安定する場合の版：**
@@ -195,12 +203,14 @@ ChatGPT 等の画像生成にそのまま貼る。`【ここに題材】` だけ
 A single 【subject】, full object visible, centered, isolated on a flat
 uniform light gray background with no ground plane and no horizon, even
 diffuse lighting, no cast shadow and no contact shadow, everything in
-sharp focus, no depth of field, front or slight three-quarter view,
+sharp focus, no depth of field, three-quarter view at about 45 degrees
+(not a straight-on frontal view),
 no text, no logo, no border, no glass or mirror material, square, high resolution.
 
 Negative: background scenery, ground, floor, pedestal, horizon, multiple
 objects, cropped, shadow, contact shadow, bokeh, depth of field, backlight,
-dramatic lighting, text, watermark, frame, transparent material, motion blur.
+dramatic lighting, text, watermark, frame, transparent material, motion blur,
+flat frontal view, orthographic elevation.
 ```
 
 #### 2.2.1 送信前の確認（**毎回、目で見る**）
@@ -212,6 +222,7 @@ dramatic lighting, text, watermark, frame, transparent material, motion blur.
 | 影が無いか | 対象の下や横に影が伸びていないか |
 | ボケていないか | 背景側がぼやけていないか |
 | 対象は1つか | 小物・台座・添え物が写っていないか |
+| **視点は斜め45度か** | **真正面になっていないか。奥行きが見えているか**（A-48） |
 
 **1つでも外れていたら、3Dに送る前に作り直す。** 送ってから気づくと $0.30 が無駄になる。
 
@@ -237,6 +248,20 @@ dramatic lighting, text, watermark, frame, transparent material, motion blur.
 | 3 | 太い部材の組み合わせ | 鳥居、井戸、太鼓 |
 | **4** | **細い部材＋抜け** | **椅子**、行灯、自転車 |
 | 5 | 細部が非常に多い | 狛犬、松の木、神輿 |
+
+#### 2.2.3 視点は5枚で揃える（斜め45度）
+
+**真正面から見た画像は、奥行きの手がかりを一つも持たない。**
+画像→3D は Z 方向（奥行き）を丸ごと推測することになる。
+斜め45度なら二面が見え、輪郭から奥行きを読み取れる。
+
+**さらに、検証としての問題がある。** 5枚のうち1枚だけ視点が違うと、
+その1枚が崩れたときに**「題材が難しかった」のか「視点が悪かった」のか
+切り分けられない。** 変数を増やさないために**5枚とも斜め45度に揃える。**
+
+**ただし例外がある。** 対象が**左右対称で薄い**もの（鳥居・門・額など）は、
+斜めにすると奥行き方向が極端に狭く見えることがある。
+その場合も**真正面は避け、浅い角度（15〜30度程度）にする。**
 
 
 ---
