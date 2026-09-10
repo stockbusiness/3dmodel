@@ -127,6 +127,14 @@ def _as_int(value: str) -> int | None:
     return int(value) if value else None
 
 
+def _cap_text(value: object) -> str:
+    """JSON から来た上限額を文字列にする。
+
+    **`or ""` を使わない。** `0` が偽と判定されて「未設定」に化けてしまう。
+    """
+    return "" if value is None else str(value)
+
+
 def _as_cap_micro(value: str) -> int | None:
     """上限額のUSD文字列を micro-USD の整数にする。**浮動小数点を経由しない**（仕様第9章）。
 
@@ -247,7 +255,7 @@ def api_create(
         operator,
         name=str(payload.get("name", "")),
         purpose_note=str(payload.get("purpose_note", "")),
-        cost_cap_micro_usd=_as_cap_micro(str(payload.get("cost_cap_usd") or "")),
+        cost_cap_micro_usd=_as_cap_micro(_cap_text(payload.get("cost_cap_usd"))),
         reference_rate=payload.get("reference_rate"),
         hourly_wage=payload.get("hourly_wage"),
         is_live=bool(payload.get("is_live", False)),

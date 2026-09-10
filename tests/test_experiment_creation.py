@@ -128,3 +128,26 @@ def test_live_option_is_disabled_when_live_api_is_off(auth_client):
     """実APIが無効なら、画面でも「実API」を選べないようにする。"""
     body = auth_client.get("/").text
     assert "いまは選べません" in body
+
+
+def test_cost_cap_of_zero_is_not_treated_as_unset(auth_client):
+    """上限額 0 が「未設定」に化けない。
+
+    `str(payload.get("cost_cap_usd") or "")` と書くと **0 が偽と判定されて
+    None になる**。0 は「1円も使わない」という指定であって、未設定ではない。
+    """
+    response = _create(auth_client, name="上限0のモック", cost_cap_usd=0)
+    assert response.status_code == 201, response.text
+    rows = auth_client.get("/api/experiments").json()
+    row = next(r for r in rows if r["id"] == response.json()["id"])
+    assert row["cost_cap_micro_usd"] == 0
+
+
+def test_cost_cap_accepts_a_json_number(auth_client, monkeypatch):
+    """JSON の数値（文字列でない）でも受け取れる。"""
+    _enable_live(monkeypatch)
+    response = _create(auth_client, is_live=True, cost_cap_usd=3)
+    assert response.status_code == 201, response.text
+    rows = auth_client.get("/api/experiments").json()
+    row = next(r for r in rows if r["id"] == response.json()["id"])
+    assert row["cost_cap_micro_usd"] == 3_000_000
