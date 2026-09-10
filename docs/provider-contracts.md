@@ -413,6 +413,81 @@ CLAUDE.md 第2章により、**価格と引数の意味が確認できないも�
 
 ---
 
+### 1.11 メタバース用途に関わるSDK機能（2026-09-09・**関数の存在のみ確認。価格は未確認**）
+
+利用者が切り口を「作った3Dがメタバースで使える」に変えた（`docs/decisions.md` T-17）。
+これに関わる関数が公式SDK 0.4.2 に**実在することをソースで確認した**。
+
+**確認できたのは「関数が在ること」と「引数の並び」だけである。**
+**1件あたりの価格・所要時間・成功率はいずれも未確認で、実装していない。**
+
+| 関数 | 用途 | 出力形式 |
+| --- | --- | --- |
+| `convert_model` | 形式変換と配置向けの整形 | GLTF / USDZ / FBX / OBJ / STL / 3MF |
+| `rig_model` | リグ付け | glb / fbx |
+| `check_riggable` | リグ付け可否の事前判定 | — |
+| `smart_lowpoly` | ポリゴン削減 | — |
+| `refine_model` | 精細化 | — |
+| `texture_model` | 再テクスチャ | — |
+| `stylize_model` | 様式変換 | — |
+| `mesh_segmentation` | メッシュ分割 | — |
+| `mesh_completion` | 穴埋め | — |
+
+#### 1.11.1 `convert_model` の引数（配置物にするための機能が揃っている）
+
+| 引数 | 既定 | 意味 |
+| --- | --- | --- |
+| `format` | （必須） | `GLTF` / `USDZ` / `FBX` / `OBJ` / `STL` / `3MF` |
+| `face_limit` | `None` | 三角形数の上限 |
+| `texture_size` | **`4096`** | テクスチャ解像度。**多くのプラットフォームには大きすぎる既定値** |
+| `texture_format` | `JPEG` | BMP / DPX / HDR / JPEG / OPEN_EXR / PNG / TARGA / TIFF / WEBP |
+| `scale_factor` | `1.0` | スケール |
+| **`pivot_to_center_bottom`** | `False` | **原点を底面中央に置く**（配置物に必須） |
+| **`flatten_bottom`** | `False` | **底面を平らにする**（地面に接地させる） |
+| `flatten_bottom_threshold` | `0.01` | 平坦化のしきい値 |
+| `export_orientation` | `+x` | 書き出し時の向き（`+x` / `+y` / `-x` / `-y`） |
+| `fbx_preset` | `blender` | `blender` / `mixamo` / `3dsmax` |
+| `with_animation` | `True` | アニメーションを同梱するか |
+| `animate_in_place` | `False` | 原地でのアニメーション |
+| `quad` / `pack_uv` / `bake` / `force_symmetry` / `export_vertex_colors` / `part_names` | — | — |
+
+#### 1.11.2 `rig_model` の引数と、判明した制約
+
+| 引数 | 値 |
+| --- | --- |
+| `model_version` | `v1.0-20240301`（既定） / `v2.0-20250506` |
+| `out_format` | `glb`（既定） / `fbx` |
+| `rig_type` | `biped`（既定） / `quadruped` / `hexapod` / `octopod` / `avian` / `serpentine` / `aquatic` / `others` |
+| `spec` | **`tripo`（既定） / `mixamo`** |
+
+**制約：`spec` に VRM が無い。** リグの仕様は `tripo` と `mixamo` の2種類だけで、
+**cluster・VRChat 系のアバター規格（VRM）へ直接書き出す手段が無い。**
+Unity・Unreal・Blender で使うぶんには `mixamo` 仕様と FBX で足りるが、
+**VRM を要求するプラットフォームへ出すには別途変換が必要になる。**
+
+したがって**アバターより「置物・オブジェクト」のほうが現実的**である
+（`docs/decisions.md` T-17）。
+
+---
+
+### 1.12 画像生成に関わるSDK機能（2026-09-09・**関数の存在のみ確認。価格は未確認**）
+
+利用者から「画像生成を本システムに取り込む」案が出た（`docs/decisions.md` T-21）。
+関連する関数が公式SDK 0.4.2 に**実在することをソースで確認した**。
+
+| 関数 | 引数 | 備考 |
+| --- | --- | --- |
+| `text_to_image` | `prompt`, `negative_prompt` | **`negative_prompt` があるため「背景・影・見切れ」を除外する固定文が書ける** |
+| `generate_image` | `prompt`, `model_version`, `file`, `files`, `template`, **`t_pose`**, **`sketch_to_render`** | **`t_pose` と `sketch_to_render` の挙動は型（bool）しか分からない**（U-34） |
+| `text_to_model` | `prompt`, `negative_prompt`, `image_seed`, ほか `image_to_model` と同じ3D引数 | **テキストから直接3D。** `image_seed` を持つことから内部で画像を作っている構造と**推測される（未確認）** |
+| `generate_multiview_image` | `image` | **1枚から多視点画像を作る** |
+
+**確認できたのは「関数が在ること」と「引数の並び」だけである。**
+**価格・品質・`template` の取りうる値・`t_pose` と `sketch_to_render` の実際の挙動は
+いずれも未確認で、実装していない**（U-33〜U-36）。
+
+---
+
 ---
 
 ## 2. Meshy
@@ -900,6 +975,16 @@ A3.5 の5題材には足りない**（第2.4.1節・規約第2.10条）。
 | U-10 | Tripo：`model_version` をより新しい版（`v3.1-20260211` 等）にすべきか。品質と価格の差 | 公式資料 | 既定の `v2.5-20250123` を採用中 |
 | ~~U-11~~ | ~~Tripo：送信時の形式固定申告が PNG/WebP 入力の結果に影響するか~~ → **原因を特定して修正した（2026-09-09）**。公式SDK 0.4.2 の `upload_file` は**ファイル名の拡張子**から申告形式を決める（`_EXT_TO_STS_FORMAT`。不明な拡張子は `"jpeg"`）。こちらの保存キーは拡張子を持たないため、**PNG/WebP でも "jpeg" と申告されていた**。正しい拡張子を付けた一時ファイル経由で渡すようにした（`docs/decisions.md` A-46） | 公式SDKのソース | 解消。**PNG/WebP をそのまま送れる** |
 | U-26 | Tripo：**多視点入力（`multiview_to_model`）の1件あたりの価格**と、`images` の各位置がどの向きに対応するか。SDKに関数は実在するが、価格ページで確認したのは Image to 3D の 30credits のみ。第1.10節を参照 | 価格ページの他項目、または公式のAPIドキュメント | **A3.5 の関門ではない**（正面1枚に切り出して回避する。`docs/decisions.md` T-15）。教室の題材が「正面＋背面を並べた1枚」中心なら、本運用の前に確認が要る |
+| U-27 | Tripo：**`convert_model` の1件あたりの価格**。形式変換・`face_limit`・`texture_size`・`pivot_to_center_bottom`・`flatten_bottom` はすべてこの関数で行う。第1.11.1節を参照 | 価格ページの他項目、または公式のAPIドキュメント | **メタバース用途の中心機能**（`docs/decisions.md` T-17）。生成1件のほかに変換1件分の費用がかかるなら、見積 $0.30/件 は不足する |
+| U-28 | Tripo：**`rig_model` の1件あたりの価格**と、`check_riggable` が課金対象か。第1.11.2節を参照 | 同上 | アバター用途にするなら必須。置物用途なら不要 |
+| U-29 | Tripo：**`smart_lowpoly` の価格**、および生成時の `smart_low_poly=True` と後処理の `smart_lowpoly` の違い | 同上 | プラットフォームの三角形数上限を満たす手段。生成時の引数で足りるなら追加費用は不要 |
+| U-30 | Tripo：**変換・リグ後の成果物の配信ホスト**が生成物と同じか（U-7 と同じ問題）。および変換後タスクの成果物の保持期間 | 実物のURL | 異なる場合は `APP_TRIPO_DOWNLOAD_HOSTS` に追加が要る |
+| U-31 | Tripo：**画像1枚から生成したメッシュが `rig_model` に耐えるか**。腕・脚が胴体に融合していればリグは失敗する見込み。`check_riggable` が事前に判定するが、**成功率と、どんな絵なら通るのか（T字ポーズが必要か）が未確認**。第1.11.2節を参照 | 実際に1件試す（`check_riggable` が無課金なら安価に確認できる可能性がある。それも未確認） | **アバター用途（`docs/decisions.md` T-18 案C）の成否を直接左右する**。置物用途なら不要 |
+| U-32 | Tripo：**`convert_model` の `export_orientation` と `scale_factor` が Unity の左手系 Y-up・1unit=1m にどう対応するか**。SDKに説明が無い | 実物をUnityに取り込んで確認 | 向きと大きさが合わないと配置のたびに手直しが要る。**Unity 側での確認が必要で、本システムの範囲外**（T-18） |
+| U-33 | Tripo：**`text_to_image` の1件あたりの価格**と、`negative_prompt` がどこまで効くか。第1.12節を参照 | 価格ページの他項目、または公式のAPIドキュメント | **画像生成を本システムに取り込む案の中心**（`docs/decisions.md` T-21）。3D生成より十分安くなければ「安い工程で絞る」設計が成り立たない |
+| U-34 | Tripo：**`generate_image` の `template` が取る値**、**`t_pose` と `sketch_to_render` の実際の挙動・品質・価格**。SDKの型は bool だが、何が起きるかの説明が無い | 同上 | **`sketch_to_render` は T-21 の推奨案（生徒が描く→整える）の中心機能**。`t_pose` はアバター用途（T-18 案C）のリグ成功率を左右する |
+| U-35 | Tripo：**`text_to_model` の価格**が `image_to_model` と同じか。`image_seed` を持つことから内部で画像を作っている構造と推測されるが**未確認** | 同上 | 同額なら画像工程を挟む意味は「確認できること」だけになる |
+| U-36 | Tripo：**`generate_multiview_image` の価格**と、出力が `multiview_to_model` にそのまま渡せるか | 同上 | 1枚から多視点を作れれば U-26（多視点入力）の問題を裏返しに解決できる |
 
 ### 確認できたら行うこと
 
