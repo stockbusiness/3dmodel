@@ -13,11 +13,15 @@ from app.db import db_session
 from app.models import Asset, Experiment, Generation, Operator
 from app.models.enums import TECH_STATUSES, VERDICTS
 from app.services import audit
+from app.services.cost_guard import parse_usd_to_micro
 from app.services.review_aggregate import latest_reviews, summarize_experiment
 from app.templating import render
 
 router = APIRouter()
 USD_MICRO = 1_000_000
+
+
+TRACKS = ("standard", "early_check")
 
 
 def _create(
@@ -26,21 +30,46 @@ def _create(
     *,
     name: str,
     purpose_note: str,
-    cost_cap_usd: int | None,
+    cost_cap_micro_usd: int | None,
     reference_rate: int | None,
     hourly_wage: int | None,
+    is_live: bool = False,
+    track: str = "standard",
 ) -> Experiment:
+    """検証セットを作る。
+
+    **実APIのセットは作成時にも止める。** 生成時にも `LIVE_API_ENABLED` と
+    上限額は確認されるが（`app/services/generation.py`・`app/services/cost_guard.py`）、
+    作ってから生成で弾かれるより、作る時点で理由を出したほうが分かりやすい。
+    """
     if not name.strip():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "名称を入力してください")
+    if track not in TRACKS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "集計区分の指定が不正です")
+
+    settings = get_settings()
+    if is_live and not settings.live_api_enabled:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "実APIの検証セットは作れません。実API生成が無効です"
+            "（環境変数 APP_LIVE_API_ENABLED=true が要ります）",
+        )
+    # 仕様第11章：上限額が無いまま実API生成はできない
+    if is_live and cost_cap_micro_usd is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "実APIの検証セットには上限額（USD）が要ります（仕様第11章）",
+        )
+
     experiment = Experiment(
         name=name.strip(),
         purpose_note=purpose_note.strip(),
         # 金額は整数 micro-USD で保持する（仕様第9章）
-        cost_cap_micro_usd=cost_cap_usd * USD_MICRO if cost_cap_usd is not None else None,
+        cost_cap_micro_usd=cost_cap_micro_usd,
         reference_rate_jpy_per_usd=reference_rate,
         hourly_wage_jpy=hourly_wage,
-        is_live=False,  # 実API生成は A3 以降。A1は必ずモック
-        track="standard",
+        is_live=is_live,
+        track=track,
         created_by=operator.id,
     )
     db.add(experiment)
@@ -51,7 +80,12 @@ def _create(
         target_kind="experiment",
         target_id=experiment.id,
         action="create",
-        after={"name": experiment.name, "cost_cap_micro_usd": experiment.cost_cap_micro_usd},
+        after={
+            "name": experiment.name,
+            "cost_cap_micro_usd": experiment.cost_cap_micro_usd,
+            "is_live": experiment.is_live,
+            "track": experiment.track,
+        },
     )
     return experiment
 
@@ -75,7 +109,33 @@ def list_page(
                 "summary": summarize_experiment(db, experiment.id),
             }
         )
-    return render(request, "experiments.html", {"operator": operator, "experiments": rows})
+    settings = get_settings()
+    return render(
+        request,
+        "experiments.html",
+        {
+            "operator": operator,
+            "experiments": rows,
+            "live_api_enabled": settings.live_api_enabled,
+            "global_cost_cap_usd": settings.global_cost_cap_usd,
+        },
+    )
+
+
+def _as_int(value: str) -> int | None:
+    value = value.strip()
+    return int(value) if value else None
+
+
+def _as_cap_micro(value: str) -> int | None:
+    """上限額のUSD文字列を micro-USD の整数にする。**浮動小数点を経由しない**（仕様第9章）。
+
+    `$1.50` のような端数を受け取れる必要がある（A3.5 の見積は $1.50）。
+    """
+    try:
+        return parse_usd_to_micro(value)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.post("/experiments", dependencies=[Depends(csrf_protect)])
@@ -85,21 +145,21 @@ def create_from_form(
     cost_cap_usd: str = Form(""),
     reference_rate: str = Form(""),
     hourly_wage: str = Form(""),
+    mode: str = Form("mock"),
+    track: str = Form("standard"),
     operator: Operator = Depends(current_operator),
     db: Session = Depends(db_session),
 ):
-    def as_int(value: str) -> int | None:
-        value = value.strip()
-        return int(value) if value else None
-
     experiment = _create(
         db,
         operator,
         name=name,
         purpose_note=purpose_note,
-        cost_cap_usd=as_int(cost_cap_usd),
-        reference_rate=as_int(reference_rate),
-        hourly_wage=as_int(hourly_wage),
+        cost_cap_micro_usd=_as_cap_micro(cost_cap_usd),
+        reference_rate=_as_int(reference_rate),
+        hourly_wage=_as_int(hourly_wage),
+        is_live=(mode == "live"),
+        track=track,
     )
     return RedirectResponse(f"/experiments/{experiment.id}", status_code=303)
 
@@ -187,9 +247,11 @@ def api_create(
         operator,
         name=str(payload.get("name", "")),
         purpose_note=str(payload.get("purpose_note", "")),
-        cost_cap_usd=payload.get("cost_cap_usd"),
+        cost_cap_micro_usd=_as_cap_micro(str(payload.get("cost_cap_usd") or "")),
         reference_rate=payload.get("reference_rate"),
         hourly_wage=payload.get("hourly_wage"),
+        is_live=bool(payload.get("is_live", False)),
+        track=str(payload.get("track", "standard")),
     )
     return {"id": experiment.id}
 

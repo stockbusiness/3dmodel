@@ -42,8 +42,23 @@
     <label for="purpose_note">目的</label>
     <textarea id="purpose_note" name="purpose_note" placeholder="例：教室の既存作品が3D化に耐えるかを確認する"></textarea>
 
-    <label for="cost_cap_usd">上限額（USD）<span class="hint">実API生成を行う場合は必須です。モック検証では空欄で構いません。</span></label>
-    <input id="cost_cap_usd" name="cost_cap_usd" type="number" min="0" step="1" inputmode="numeric">
+    <label for="mode">実/モック</label>
+    <select id="mode" name="mode">
+      <option value="mock" selected>モック（課金なし）</option>
+      <option value="live" {% if not live_api_enabled %}disabled{% endif %}>
+        実API（課金が発生します）{% if not live_api_enabled %}／いまは選べません{% endif %}
+      </option>
+    </select>
+
+    <label for="track">集計区分</label>
+    <select id="track" name="track">
+      <option value="standard" selected>通常検証</option>
+      <option value="early_check">早期確認（A3.5）</option>
+    </select>
+    <p class="hint">早期確認は集計で通常検証と分けて表示します（仕様第10章）。混ぜないでください。</p>
+
+    <label for="cost_cap_usd">上限額（USD）<span class="hint">実APIでは必須です。モックでは空欄で構いません。小数を入れられます（例：1.50）。</span></label>
+    <input id="cost_cap_usd" name="cost_cap_usd" type="text" inputmode="decimal" placeholder="例：1.50">
 
     <label for="reference_rate">参考換算レート（1USDあたりの円）<span class="hint">利用者が指定する参考値です。現在レートではありません。</span></label>
     <input id="reference_rate" name="reference_rate" type="number" min="1" step="1" inputmode="numeric">
@@ -51,10 +66,18 @@
     <label for="hourly_wage">想定時給（円）</label>
     <input id="hourly_wage" name="hourly_wage" type="number" min="0" step="1" inputmode="numeric">
 
+    {% if live_api_enabled %}
     <div class="notice warn">
-      現在の版はモック専用です。実API生成は A3 以降に有効化します
-      （<span class="mono">LIVE_API_ENABLED=false</span>）。
+      <strong>実API生成が有効です</strong>（<span class="mono">APP_LIVE_API_ENABLED=true</span>）。
+      「実API」を選ぶと<strong>実際に課金が発生します</strong>。
+      全体上限額は <span class="mono">{{ global_cost_cap_usd or "未設定" }}</span> USD です。
     </div>
+    {% else %}
+    <div class="notice">
+      実API生成は無効です（<span class="mono">APP_LIVE_API_ENABLED=false</span>）。
+      この状態では<strong>モックの検証セットしか作れません</strong>。
+    </div>
+    {% endif %}
 
     <p><button type="submit">作成する</button></p>
   </form>
