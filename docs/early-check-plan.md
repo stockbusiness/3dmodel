@@ -447,6 +447,16 @@ docker compose run --rm web python -m app.cli check-provider tripo --connect
    APP_TRIPO_DOWNLOAD_HOSTS=〇〇〇
    ```
 
+   **2026-09-10 に確認した実際の値：**
+
+   ```
+   APP_TRIPO_DOWNLOAD_HOSTS=tripo-data.rg1.data.tripo3d.com
+   ```
+
+   **`rg1` は地域識別子と見られる。** 別のホスト名が出たら、
+   カンマ区切りで足すか、後方一致を使って `data.tripo3d.com` にする
+   （`docs/provider-contracts.md` 第1.13.1節）。
+
 5. 生成の詳細画面で **「保存だけ再試行」** を押す。
    **これは追加課金の無い操作である**（生成をやり直さない）
 
