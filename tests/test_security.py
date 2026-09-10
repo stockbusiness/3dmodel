@@ -257,3 +257,54 @@ def test_too_many_pixels_is_rejected(auth_client, monkeypatch):
     )
     assert response.status_code == 400
     assert "画素数" in response.text
+
+
+def test_csp_allows_blob_for_embedded_textures():
+    """`connect-src` に blob: を許す（`docs/decisions.md` A-50）。
+
+    three.js の GLTFLoader は **GLBに埋め込まれたテクスチャ**を Blob URL に
+    切り出してから fetch する。これを塞ぐと、形は出るのに**真っ白なモデル**になる。
+    実際に A3.5 の1件目でそうなった。
+    """
+    from app.main import CSP
+
+    directives = dict(
+        part.strip().split(" ", 1)
+        for part in CSP.split(";")
+        if part.strip() and " " in part.strip()
+    )
+    assert "blob:" in directives["connect-src"], CSP
+    # 同じ理由で既に許可している2つも、外れていないことを確かめる
+    assert "blob:" in directives["img-src"], CSP
+    assert "blob:" in directives["worker-src"], CSP
+
+
+def test_csp_still_allows_no_external_origin():
+    """blob: を足しても、**外部への接続は一切許していない**ことを確かめる。"""
+    from app.main import CSP
+
+    assert "http://" not in CSP
+    assert "https://" not in CSP
+    assert "*" not in CSP
+    assert "'unsafe-eval'" not in CSP
+    assert "'unsafe-inline'" not in CSP.split("style-src")[0]  # script 側には無い
+
+
+def test_a_textured_sample_glb_exists_for_the_viewer_tests():
+    """テクスチャ付きの見本が必ず在る（A-50）。
+
+    これが無いと、テクスチャの読込経路を通る試験が書けず、
+    今回の不具合（CSP がテクスチャを止める）を捕まえられない。
+    """
+    from pathlib import Path
+
+    from app.providers.mock import SAMPLES
+    from app.services import glb_inspect
+
+    root = Path(__file__).resolve().parents[1] / "fixtures"
+    textured = []
+    for name in SAMPLES:
+        metrics = glb_inspect.inspect((root / name).read_bytes())
+        if (metrics.texture_count or 0) > 0:
+            textured.append(name)
+    assert textured, f"モックの見本にテクスチャ付きが1つも無い: {SAMPLES}"

@@ -62,12 +62,39 @@ def _pad(data: bytes, alignment: int = 4, filler: bytes = b"\x00") -> bytes:
     return data if remainder == 0 else data + filler * (alignment - remainder)
 
 
-def build_glb(positions, normals, indices, base_color) -> bytes:
+def _checker_png(size: int = 64) -> bytes:
+    """合成の市松模様PNG。実素材は使わない（仕様第13章）。"""
+    from io import BytesIO
+
+    from PIL import Image
+
+    image = Image.new("RGB", (size, size))
+    pixels = image.load()
+    for y in range(size):
+        for x in range(size):
+            on = ((x // 8) + (y // 8)) % 2 == 0
+            pixels[x, y] = (214, 140, 88) if on else (92, 68, 52)
+    out = BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+def build_glb(positions, normals, indices, base_color, uvs=None, texture_png=None) -> bytes:
+    """サンプルGLBを組み立てる。
+
+    `uvs` と `texture_png` を与えると、**GLBに埋め込まれたテクスチャ**を持つ
+    モデルになる。テクスチャの有無で表示経路が変わるため、両方の見本が要る
+    （`docs/decisions.md` A-50：テクスチャ無しの見本しか無かったため、
+    CSP がテクスチャの読込を止めている不具合を試験で捕まえられなかった）。
+    """
     position_bytes = b"".join(struct.pack("<3f", *p) for p in positions)
     normal_bytes = b"".join(struct.pack("<3f", *n) for n in normals)
     index_bytes = _pad(b"".join(struct.pack("<H", i) for i in indices))
+    textured = uvs is not None and texture_png is not None
+    uv_bytes = _pad(b"".join(struct.pack("<2f", *uv) for uv in uvs)) if textured else b""
+    png_bytes = _pad(texture_png) if textured else b""
 
-    buffer = position_bytes + normal_bytes + index_bytes
+    buffer = position_bytes + normal_bytes + index_bytes + uv_bytes + png_bytes
     xs = [p[0] for p in positions]
     ys = [p[1] for p in positions]
     zs = [p[2] for p in positions]
@@ -81,7 +108,11 @@ def build_glb(positions, normals, indices, base_color) -> bytes:
             {
                 "primitives": [
                     {
-                        "attributes": {"POSITION": 0, "NORMAL": 1},
+                        "attributes": {
+                            "POSITION": 0,
+                            "NORMAL": 1,
+                            **({"TEXCOORD_0": 3} if textured else {}),
+                        },
                         "indices": 2,
                         "material": 0,
                         "mode": 4,
@@ -139,6 +170,24 @@ def build_glb(positions, normals, indices, base_color) -> bytes:
         "buffers": [{"byteLength": len(buffer)}],
     }
 
+    if textured:
+        uv_offset = len(position_bytes) + len(normal_bytes) + len(index_bytes)
+        png_offset = uv_offset + len(uv_bytes)
+        gltf["accessors"].append(
+            {"bufferView": 3, "componentType": 5126, "count": len(uvs), "type": "VEC2"}
+        )
+        gltf["bufferViews"].append(
+            {"buffer": 0, "byteOffset": uv_offset, "byteLength": len(uv_bytes), "target": 34962}
+        )
+        # 画像の bufferView に target は付けない（頂点でも索引でもないため）
+        gltf["bufferViews"].append(
+            {"buffer": 0, "byteOffset": png_offset, "byteLength": len(texture_png)}
+        )
+        gltf["images"] = [{"bufferView": 4, "mimeType": "image/png"}]
+        gltf["samplers"] = [{"magFilter": 9729, "minFilter": 9987, "wrapS": 10497, "wrapT": 10497}]
+        gltf["textures"] = [{"sampler": 0, "source": 0}]
+        gltf["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"] = {"index": 0}
+
     json_chunk = _pad(json.dumps(gltf, separators=(",", ":")).encode("utf-8"), filler=b" ")
     bin_chunk = _pad(buffer)
     total = 12 + 8 + len(json_chunk) + 8 + len(bin_chunk)
@@ -149,9 +198,20 @@ def build_glb(positions, normals, indices, base_color) -> bytes:
 
 
 def main() -> None:
+    # 立方体は1面4頂点 × 6面。各面に同じUVを割り当てる
+    face_uv = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    cube_uvs = face_uv * 6
+
     samples = {
         "sample_cube.glb": build_glb(*_box(1.0, 1.0, 1.0), [0.85, 0.55, 0.35, 1.0]),
         "sample_pyramid.glb": build_glb(*_pyramid(1.2, 1.1), [0.45, 0.6, 0.85, 1.0]),
+        # テクスチャ付きの見本。**表示経路がテクスチャ無しと違う**ため必ず要る（A-50）
+        "sample_textured_cube.glb": build_glb(
+            *_box(1.0, 1.0, 1.0),
+            [1.0, 1.0, 1.0, 1.0],
+            uvs=cube_uvs,
+            texture_png=_checker_png(),
+        ),
     }
     for name, data in samples.items():
         (OUT_DIR / name).write_bytes(data)
